@@ -1,0 +1,145 @@
+dnl $Id$
+dnl Process this file with autoconf to produce a configure script.
+AC_INIT(bgpd.c)
+
+dnl Checks for programs.
+AC_PROG_CC
+AC_PATH_PROG(PERL, perl, perl)
+
+CFLAGS=
+dnl Checks for header files.
+
+dnl Checks for typedefs, structures, and compiler characteristics.
+
+dnl Checks for library functions.
+
+AC_CHECK_FUNCS(inet_addr)
+case x$ac_cv_func_inet_addr in
+  xno)
+    AC_MSG_CHECKING(for inet_addr in -lxnet)
+    OLD_LIBS=$LIBS
+    LIBS="$LIBS -lxnet"
+    AC_TRY_LINK([#include <arpa/inet.h>],[inet_addr("");],
+          AC_MSG_RESULT(yes), AC_MSG_RESULT(no); AC_ERROR(no inet_addr() found))
+    ;;
+esac
+
+dnl Set dirs
+AC_ARG_WITH(debug,
+     [  --with-debug            generate debug info],
+     [CFLAGS="$CFLAGS -g"], [CFLAGS="$CFLAGS -O3"])
+
+dnl Set shmem params
+nbits=2
+maxprefix=24
+AC_ARG_WITH(nbits,
+     [  --with-nbits=NBITS      set number of bits for class of addr (2)],
+     [nbits=$withval],[])
+AC_ARG_WITH(minprefix,
+     [  --with-maxprefix=LEN    set maximum prefix length (24)],
+     [maxprefix=$withval],[])
+[if echo $nbits | grep -q '[^0-9]' || [ $nbits -ne 1 -a $nbits -ne 2 -a $nbits -ne 4 -a $nbits -ne 8 -a $nbits -ne 16 ]]
+then
+	AC_ERROR(Incorrect nbits value $nbits, must be 1..16, power of 2)
+fi
+[if echo $maxprefix | grep -q '[^0-9]' || [ $maxprefix -gt 32 -o $maxprefix -lt 16 ]]
+then
+	AC_ERROR(Incorrect nbits value $nbits, must be 1..16, power of 2)
+fi
+
+AC_DEFINE_UNQUOTED(NBITS, $nbits)
+AC_DEFINE_UNQUOTED(MAXPREFIX, $maxprefix)
+
+AC_MSG_CHECKING(for libperl)
+PERLDIR=`$PERL -MConfig -e 'print $Config{archlib}' 2>/dev/null`
+if PERLCOPT=`$PERL -MExtUtils::Embed -e ccopts 2>/dev/null`
+then
+  PERLLOPT=`$PERL -MExtUtils::Embed -e ldopts`
+  case x$PERLDIR in
+    x)
+      AC_MSG_RESULT(yes)
+      ;;
+    *)
+      AC_MSG_RESULT($PERLDIR)
+      ;;
+  esac
+else
+  case x$PERLDIR in
+    x)
+      AC_MSG_RESULT(no)
+      ;;
+    *)
+      PERLCOPT="-I$PERLDIR/CORE -Dbool=char -DHAS_BOOL"
+      PERLLOPT="$PERLDIR/auto/DynaLoader/DynaLoader.a -L$PERLDIR/CORE -lperl -ldl -lcrypt -lm"
+      AC_CHECK_LIB(dl, main, PERLLOPT="$PERLLOPT -ldl")
+      AC_CHECK_LIB(crypt, main, PERLLOPT="$PERLLOPT -lcrypt")
+      AC_CHECK_LIB(m, main, PERLLOPT="$PERLLOPT -lm")
+      AC_CHECK_LIB(socket, main, PERLLOPT="$PERLLOPT -lsocket")
+      AC_MSG_RESULT($PERLDIR)
+      ;;
+  esac
+fi
+case x$PERLCOPT in
+  x)
+    AC_ERROR(No libperl found)
+    ;;
+esac
+AC_MSG_CHECKING(for working libperl)
+OLD_LIBS=$LIBS
+OLD_CFLAGS=$CFLAGS
+LIBS="$LIBS $PERLLOPT"
+CFLAGS="$CFLAGS $PERLCOPT"
+AC_TRY_RUN([
+     #include <EXTERN.h>
+     #include <perl.h>
+     PerlInterpreter *my_perl;
+     void boot_DynaLoader(CV *cv);
+     void xs_init(void)
+     { dXSUB_SYS;
+       newXS("DynaLoader::boot_DynaLoader", boot_DynaLoader, "callperl");
+     }
+     int main(int argc, char **argv, char **env)
+     {
+     char *embedding[] = { "", "-e", "sub test { \$var='a' if \$var eq 'v'; return \$_[0]; }", NULL };
+     SV *var;
+     char *retval;
+     STRLEN n_a;
+     my_perl = perl_alloc();
+     perl_construct(my_perl);
+     if (perl_parse(my_perl, xs_init, 3, embedding, NULL))
+       return 1;
+     perl_run(my_perl);
+     var=perl_get_sv("var", TRUE);
+     { dSP;
+     sv_setpv(var, "v");
+     ENTER;
+     SAVETMPS;
+     PUSHMARK(SP);
+     XPUSHs(sv_2mortal(newSVpv("arg",0)));
+     PUTBACK;
+     perl_call_pv("test", G_SCALAR);
+     SPAGAIN;
+     retval=strdup(POPp);
+     PUTBACK;
+     FREETMPS;
+     LEAVE;
+     }
+     if (strcmp(SvPV(perl_get_sv("var", FALSE),n_a), "a") || strcmp(retval, "arg"))
+       return 2;
+     perl_destruct(my_perl);
+     perl_free(my_perl);
+     return 0;
+     }
+],
+AC_DEFINE(DO_PERL) AC_MSG_RESULT(yes); WORKING_PERL=yes,
+AC_MSG_RESULT(no); CFLAGS=$OLD_CFLAGS; LIBS=$OLD_LIBS,
+AC_MSG_RESULT(cross-compiling. No assumptions made); CFLAGS=$OLD_CFLAGS; LIBS=$OLD_LIBS
+)
+
+case x$WORKING_PERL in
+  x)
+    AC_ERROR(No working libperl found)
+    ;;
+esac
+
+AC_OUTPUT(Makefile)
