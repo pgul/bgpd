@@ -38,15 +38,43 @@ int prefix_cnt;
 static PerlInterpreter *perl = NULL;
 
 static struct route_obj *findroute(struct route_obj *new, int addnew, int *added);
+static void mapsetclass(ulong from, ulong to, class_type class);
 
 #if 1
 void boot_DynaLoader(CV *cv);
+
+static XS(perl_setclass)
+{
+  dXSARGS;
+  char *ip;
+  char *class;
+  STRLEN n_a;
+  char *p;
+  int preflen=24;
+  unsigned long ipaddr;
+
+  if (items != 2)
+  { Log(0, "Wrong params number to setclass (need 2, exist %d)", items);
+    XSRETURN_EMPTY;
+  }
+  ip    = (char *)SvPV(ST(0), n_a); if (n_a == 0) ip    = "";
+  class = (char *)SvPV(ST(1), n_a); if (n_a == 0) class = "";
+  p=strchr(ip, '/');
+  if (p)
+  { *p++='\0';
+    preflen=atoi(p);
+  }
+  ipaddr = ntohl(inet_addr(ip));
+  mapsetclass(ipaddr, ipaddr+(1<<(32-preflen))-1, atoi(class));
+  XSRETURN_EMPTY;
+}
 
 static void xs_init(void)
 {
   static char *file = __FILE__;
   dXSUB_SYS;
   newXS("DynaLoader::boot_DynaLoader", boot_DynaLoader, file);
+  newXS("setclass",  perl_setclass,  file);
 }
 #endif
 
@@ -86,6 +114,27 @@ static int PerlStart(void)
    }
    atexit(exitperl);
    return 0;
+}
+
+static void perlinitmap(void)
+{
+   STRLEN n_a;
+
+   dSP;
+   ENTER;
+   SAVETMPS;
+   PUSHMARK(SP);
+   PUTBACK;
+   perl_call_pv(plinitmap, G_EVAL|G_SCALAR);
+   SPAGAIN;
+   PUTBACK;
+   FREETMPS;
+   LEAVE;
+   if (SvTRUE(ERRSV))
+   {
+     Log(0, "Perl eval error: %s\n", SvPV(ERRSV, n_a));
+     exit(4);
+   }
 }
 
 static class_type perlsetclass(char *community, char *aspath)
@@ -329,15 +378,13 @@ static struct route_obj *ballance(struct route_obj *r)
 			route_root = p;
 		r->parent = NULL;
 		/* add r to the tree */
-		pp=findroute(r, 1, &i);
-		if (pp==NULL || i==0)
+		pp=findroute(r, 2, &i);
+		if (pp==NULL || i==0 || pp!=r)
 		{	Log(0, "Internal error!");
 			exit(2);
 		}
-		free(r);
 		r = p;
 		last_ballanced = 0;
-		prefix_cnt--;
 	}
 }
 
@@ -408,20 +455,23 @@ static struct route_obj *findroute(struct route_obj *new, int addnew, int *added
 				else
 					return cur;
 			}
-			p = malloc(sizeof(*cur));
-			if (p==NULL)
-			{	Log(0, "Memory allocation fail!");
-				exit(1);
-			}
-			memcpy(p, new, sizeof(*cur));
+			if (addnew==1)
+			{	p = malloc(sizeof(*cur));
+				if (p==NULL)
+				{	Log(0, "Memory allocation fail!");
+					exit(1);
+				}
+				memcpy(p, new, sizeof(*cur));
+				if (p->right) p->right->parent = p;
+				if (p->left) p->left->parent = p;
+				prefix_cnt++;
+			} else
+				p = new;
 			p->parent = cur;
-			if (p->right) p->right->parent = p;
-			if (p->left) p->left->parent = p;
 			*newcur = p;
 			if (added) *added=1;
 			if (ballance_cnt && last_ballanced++ >= ballance_cnt)
 				ballance_tree();
-			prefix_cnt++;
 			return p;
 		}
 	}
@@ -451,10 +501,10 @@ static void delroute(struct route_obj *route)
 		route->left->parent = route->parent;
 		if (route->right)
 		{	// add the route object with all its subtree
-			findroute(route->right, 1, NULL);
-			// free route->right because of findroute() made a copy
-			free(route->right);
-			prefix_cnt--;
+			if (findroute(route->right, 2, NULL)!=route->right)
+			{	Log(0, "Internal error in delroute!");
+				exit(3);
+			}
 		}
 	}
 	free(route);
@@ -488,6 +538,8 @@ static void mapsetclass(ulong from, ulong to, class_type class)
 		to=0x80000000ul>>(31-MAXPREFIX);
 	else
 		to=(to+1)>>(32-MAXPREFIX);
+	if (from==to)
+		return;
 #else // MAXPREFIX == 32
 	to++;
 #endif // MAXPREFIX == 32
@@ -550,8 +602,8 @@ static int chclass(struct route_obj *obj)
 	ulong last_ip;
 
 	memcpy(&route, obj, sizeof(route));
-	last_ip = route.ip+~mask[(int)route.prefix_len];
-	r = &route;
+	last_ip = route.ip+(0xfffffffful>>(int)route.prefix_len);
+	r = obj;
 	for (;;)
 	{	r = nextroute(r);
 		if (r==NULL || r->ip>last_ip)
@@ -561,7 +613,7 @@ static int chclass(struct route_obj *obj)
 		if (r->ip < route.ip) continue;
 		if (route.ip != r->ip)
 			mapsetclass(route.ip, r->ip-1, route.class);
-		route.ip = r->ip+~mask[(int)r->prefix_len]+1;
+		route.ip = r->ip+(0xfffffffful>>(int)r->prefix_len)+1;
 		if (route.ip==0 || route.ip>last_ip) return 0;
 	}
 }
@@ -570,7 +622,7 @@ void withdraw(ulong prefix, int prefix_len)
 {
 	struct route_obj r, parent, *p, *pp;
 
-	r.ip=prefix; r.prefix_len=prefix_len;
+	r.ip=ntohl(prefix); r.prefix_len=prefix_len;
 	p=findroute(&r, 0, NULL);
 	if (p==NULL)
 	{	Log(0, "Can't withdraw unexistant route %s/%u",
@@ -578,11 +630,11 @@ void withdraw(ulong prefix, int prefix_len)
 		return;
 	}
 	/* find parent route */
-	parent.ip=prefix; parent.prefix_len=(ushort)prefix_len;
+	parent.ip=ntohl(prefix); parent.prefix_len=(ushort)prefix_len;
 	parent.class = 0;
 	while (parent.prefix_len)
 	{	parent.prefix_len--;
-		parent.ip &= mask[(int)parent.prefix_len];
+		parent.ip &= 0xfffffffful<<(32-(int)parent.prefix_len);
 		if ((pp = findroute(&parent, 0, NULL)) != NULL)
 		{	parent.class = pp->class;
 			break;
@@ -605,7 +657,7 @@ void update(ulong prefix, int prefix_len, int community_len, ulong *community,
 	int added;
 
 	r.class = setclass(community, community_len, aspath, aspath_len);
-	r.ip = prefix;
+	r.ip = ntohl(prefix);
 	r.prefix_len = (ushort)prefix_len;
 	r.left = r.right = r.parent = NULL;
 	p = findroute(&r, 1, &added);
@@ -613,10 +665,12 @@ void update(ulong prefix, int prefix_len, int community_len, ulong *community,
 	{	Log(0, "Internal error!");
 		exit(2);
 	}
-	Log(2, "Updated route %s/%u, class %u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len, r.class);
+	Log(2, "Updated %sroute %s/%u, class %u",
+	    (added ? "" : "existing "),
+	    inet_ntoa(*(struct in_addr *)&prefix), prefix_len, r.class);
 	if (!added && p->class == r.class)
 		return;
-	if (added) p->class = r.class;
+	if (!added) p->class = r.class;
 	chclass(p);
 }
 
@@ -650,6 +704,7 @@ void reset_table(void)
 	if (perl==NULL)
 		exit(4);
 	Log(2, "Perl loaded");
+	perlinitmap();
 }
 
 void keepalive(void)

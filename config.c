@@ -18,7 +18,7 @@ time_t waittime;
 ushort holdtime;
 int ballance_cnt, maxdepth;
 ulong mapkey;
-char perlfile[256], plsetclass[256];
+char perlfile[256], plsetclass[256], plinitmap[256];
 
 int config(char *confname)
 {
@@ -36,6 +36,7 @@ int config(char *confname)
 	router_id = remote = (ulong)-1;
 	strcpy(perlfile, "bgpd.pl");
 	strcpy(plsetclass, "setclass");
+	strcpy(plinitmap, "initmap");
 	f = fopen(confname, "r");
 	if (f == NULL)
 	{	Log(0, "Can't open %s: %s", confname, strerror(errno));
