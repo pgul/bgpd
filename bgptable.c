@@ -34,6 +34,7 @@ static struct route_obj *route_root = NULL;
 class_type *map;
 static int last_ballanced=0;
 int prefix_cnt;
+int mapinited;
 
 static PerlInterpreter *perl = NULL;
 
@@ -138,6 +139,27 @@ static void perlinitmap(void)
    PUSHMARK(SP);
    PUTBACK;
    perl_call_pv(plinitmap, G_EVAL|G_SCALAR);
+   SPAGAIN;
+   PUTBACK;
+   FREETMPS;
+   LEAVE;
+   if (SvTRUE(ERRSV))
+   {
+     Log(0, "Perl eval error: %s\n", SvPV(ERRSV, n_a));
+     exit(4);
+   }
+}
+
+void perlbgpup(void)
+{
+   STRLEN n_a;
+
+   dSP;
+   ENTER;
+   SAVETMPS;
+   PUSHMARK(SP);
+   PUTBACK;
+   perl_call_pv(plbgpup, G_EVAL|G_SCALAR);
    SPAGAIN;
    PUTBACK;
    FREETMPS;
@@ -699,6 +721,7 @@ void reset_table(void)
 
 void do_initmap(void)
 {
+	if (mapinited) return;
 	mapsetclass(0, 0xfffffffful, 0);
 	last_ballanced = 0;
 	prefix_cnt = 0;
@@ -708,6 +731,7 @@ void do_initmap(void)
 		exit(4);
 	Log(2, "Perl loaded");
 	perlinitmap();
+	mapinited=1;
 }
 
 void keepalive(void)

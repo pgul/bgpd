@@ -56,7 +56,8 @@ extern time_t waittime;
 extern ushort holdtime;
 extern int ballance_cnt, maxdepth;
 extern ushort remote_as;
-extern char perlfile[], plsetclass[], plinitmap[];
+extern char perlfile[], plsetclass[], plinitmap[], plbgpup[];
+extern int mapinited;
 
 void Log(int level, char *format, ...);
 void update(ulong prefix, int prefix_len, int community_len, ulong *community,
@@ -65,5 +66,6 @@ void withdraw(ulong prefix, int prefix_len);
 void reset_table(void);
 void init_map(int argc, char *argv[]);
 void do_initmap(void);
+void perlbgpup(void);
 void keepalive(void);
 int config(char *confname);

@@ -347,9 +347,12 @@ send_keepalive:
 		}
 		/* process UPDATE message */
 		if (!wasupdate)
-		{	wasupdate=1;
+		{
 			reset_table();
 			do_initmap();
+			perlbgpup();
+			mapinited=0;
+			wasupdate=1;
 		}
 		withdraw_length = ntohs(*(ushort *)(hdr.pktdata));
 		withdraw_routes = hdr.pktdata+2;

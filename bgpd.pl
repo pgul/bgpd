@@ -1,5 +1,13 @@
 sub initmap
+# Called when shared memory segment created or before bgpup if used old segment
 {
+	initclass("0.0.0.0/0", 1);	# Means all is Ukraine when bgp down
+}
+
+sub bgpup
+# Called when first update received
+{
+	initclass("0.0.0.0/0", 0);	# switch default to world
 	initclass("10.0.0.0/8", 1);
 	initclass("127.0.0.0/8", 1);
 }
