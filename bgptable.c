@@ -145,10 +145,10 @@ static void perlinitmap(void)
    LEAVE;
    if (SvTRUE(ERRSV))
    {
-     Log(0, "Perl %s() eval error: %s\n", plinitmap, SvPV(ERRSV, n_a));
+     Log(0, "Perl %s() eval error: %s", plinitmap, SvPV(ERRSV, n_a));
      exit(4);
    } else
-     Log(2, "Perl %s() called\n", plinitmap);
+     Log(2, "Perl %s() called", plinitmap);
 }
 
 void perlbgpup(void)
@@ -167,10 +167,10 @@ void perlbgpup(void)
    LEAVE;
    if (SvTRUE(ERRSV))
    {
-     Log(0, "Perl %s() eval error: %s\n", plbgpup, SvPV(ERRSV, n_a));
+     Log(0, "Perl %s() eval error: %s", plbgpup, SvPV(ERRSV, n_a));
      exit(4);
    } else
-     Log(2, "Perl %s() called\n", plbgpup);
+     Log(2, "Perl %s() called", plbgpup);
 }
 
 static class_type perlsetclass(char *community, char *aspath, char *prefix)
@@ -203,7 +203,7 @@ static class_type perlsetclass(char *community, char *aspath, char *prefix)
    LEAVE;
    if (SvTRUE(ERRSV))
    {
-     Log(0, "Perl %s() eval error: %s\n", plsetclass, SvPV(ERRSV, n_a));
+     Log(0, "Perl %s() eval error: %s", plsetclass, SvPV(ERRSV, n_a));
      exit(4);
    }
    if (n_a == 0 && prc)
