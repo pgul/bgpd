@@ -1,4 +1,4 @@
-#define CONFNAME "bgpd.conf"
+#define CONFNAME "/usr/local/etc/bgpd.conf"
 
 struct bgp_hdr {
 	char marker[16];
