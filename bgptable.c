@@ -23,12 +23,6 @@
 #include "bgpd.h"
 #include "ipmap.h"
 
-#if NBITS>8
-typedef ushort class_type;
-#else
-typedef char class_type;
-#endif
-
 struct route_obj {
 	ulong ip;
 	char prefix_len;
@@ -468,6 +462,7 @@ static void delroute(struct route_obj *route)
 	prefix_cnt--;
 }
 
+#if NBITS<=8
 static void shmemset(class_type *map[], int offs, char class, unsigned int size)
 {
 	int firstreg, lastreg, i, lastoffs;
@@ -494,6 +489,7 @@ static class_type shmgetone(class_type *map[], unsigned int offs)
 {
 	return map[offs/(SHMMAX/sizeof(class_type))][offs%(SHMMAX/sizeof(class_type))];
 }
+#endif
 
 static void shmputone(class_type *map[], unsigned int offs, class_type class)
 {
@@ -513,7 +509,6 @@ static void mapsetclass(ulong from, ulong to, class_type class)
 #endif // MAXPREFIX == 32
 #if NBITS == 16
 	{	int i;
-		class_type *m;
 		i=from;
 		do
 		{	shmputone(map, i, class);

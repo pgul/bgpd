@@ -1,4 +1,4 @@
-#define NBITS		8	// 1..16, power of 2
+#define NBITS		16	// 1..16, power of 2
 #define MAXPREFIX	24	// 0..32, maximum processible prefix length
 // WARNING: NBITS 16 and MAXPREFIX 32 requires 8G of shared memory!
 // NBITS 1 and MAXPREFIX 24 - 2M
@@ -18,5 +18,11 @@
 
 #define NREGS	((MAPSIZE + SHMMAX - 1) / SHMMAX)
 
-extern char *map[NREGS];
+#if NBITS>8
+typedef ushort class_type;
+#else
+typedef char class_type;
+#endif
+
+extern class_type *map[NREGS];
 extern ulong mapkey;
