@@ -43,7 +43,7 @@ static void mapsetclass(ulong from, ulong to, class_type class);
 static int chclass(struct route_obj *obj);
 
 #if 1
-void boot_DynaLoader(CV *cv);
+void boot_DynaLoader(pTHX_ CV *cv);
 
 static XS(perl_initclass)
 {
@@ -86,7 +86,7 @@ static XS(perl_initclass)
   XSRETURN_EMPTY;
 }
 
-static void xs_init(void)
+static void xs_init(pTHX)
 {
   static char *file = __FILE__;
   dXSUB_SYS;
