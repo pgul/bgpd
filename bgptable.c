@@ -528,7 +528,7 @@ static void mapsetclass(ulong from, ulong to, class_type class)
 		firstbyte = from/(8/NBITS);
 		lastbyte = (to-1)/(8/NBITS);
 		mask1 = (0xff<<((from-firstbyte*(8/NBITS))*NBITS)) & 0xff;
-		mask2 = 0xff>>((8-(to-1-lastbyte*(8/NBITS)))*NBITS);
+		mask2 = 0xff>>(8-((to-lastbyte*(8/NBITS)))*NBITS);
 #if NBITS == 1
 		class = (class ? 0xff : 0);
 #elif NBITS == 2
