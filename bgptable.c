@@ -68,12 +68,12 @@ static XS(perl_initclass)
   }
   r.class = (class_type)class;
   r.ip = ntohl(inet_addr(ip));
-  free(ip);
   r.prefix_len = (ushort)preflen;
   r.left = r.right = r.parent = NULL;
   pr = findroute(&r, 1, &added);
   if (!pr)
   { Log(0, "Internal error!");
+    free(ip);
     exit(2);
   }
   if (!added && pr->class == r.class)
@@ -81,6 +81,7 @@ static XS(perl_initclass)
   if (!added) pr->class = r.class;
   chclass(pr);
   Log(6, "Initclass %s/%u to %u", ip, preflen, class);
+  free(ip);
 
   XSRETURN_EMPTY;
 }
