@@ -548,6 +548,7 @@ int main(int argc, char *argv[])
 	confname=argv[optind];
 	if (config(confname))
 		exit(3);
+	if (daemonize) daemon(0, 0);
 	if (pidfile[0])
 	{
 		FILE *f=fopen(pidfile, "w");
