@@ -59,6 +59,7 @@ static XS(perl_initclass)
     XSRETURN_EMPTY;
   }
   ip    = (char *)SvPV(ST(0), n_a); if (n_a == 0) ip    = "";
+  ip = strdup(ip);
   class = SvIV(ST(1));
   p=strchr(ip, '/');
   if (p)
@@ -67,6 +68,7 @@ static XS(perl_initclass)
   }
   r.class = (class_type)class;
   r.ip = ntohl(inet_addr(ip));
+  free(ip);
   r.prefix_len = (ushort)preflen;
   r.left = r.right = r.parent = NULL;
   pr = findroute(&r, 1, &added);
@@ -78,6 +80,7 @@ static XS(perl_initclass)
     return;
   if (!added) pr->class = r.class;
   chclass(pr);
+  Log(6, "Initclass %s/%u to %u", ip, preflen, class);
 
   XSRETURN_EMPTY;
 }
@@ -148,7 +151,7 @@ static void perlinitmap(void)
      Log(0, "Perl %s() eval error: %s", plinitmap, SvPV(ERRSV, n_a));
      exit(4);
    } else
-     Log(2, "Perl %s() called", plinitmap);
+     Log(2, "Perl %s() success", plinitmap);
 }
 
 void perlbgpup(void)
@@ -170,7 +173,7 @@ void perlbgpup(void)
      Log(0, "Perl %s() eval error: %s", plbgpup, SvPV(ERRSV, n_a));
      exit(4);
    } else
-     Log(2, "Perl %s() called", plbgpup);
+     Log(2, "Perl %s() success", plbgpup);
 }
 
 static class_type perlsetclass(char *community, char *aspath, char *prefix)
