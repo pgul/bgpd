@@ -23,3 +23,9 @@ addrq.o:	addrq.c bgpd.h ipmap.h
 
 addrq:		addrq.o
 	gcc $(CFLAGS) -o addrq -g addrq.o $(LIBS)
+
+install:	all
+	install bgpd addrq $(prefix)/bin
+	sed s#/usr/local/etc#@sysconfdir@# <bgpd.conf >bgpd.conf.site
+	install bgpd.conf.site @sysconfdir@/bgpd.conf
+	install bgpd.pl @sysconfdir@
