@@ -2151,7 +2151,7 @@ if { (eval echo "$as_me:$LINENO: \"$ac_compile\"") >&5
   echo "$as_me:$LINENO: \$? = $ac_status" >&5
   (exit $ac_status); }; }; then
   echo "$as_me:$LINENO: result: yes" >&5
-echo "${ECHO_T}yes" >&6 cat >>confdefs.h <<\_ACEOF
+echo "${ECHO_T}yes" >&6; cat >>confdefs.h <<\_ACEOF
 #define HAVE_ULONG 1
 _ACEOF
 

@@ -52,7 +52,7 @@ AC_DEFINE_UNQUOTED(MAXPREFIX, $maxprefix)
 
 AC_MSG_CHECKING(for ulong in <sys/types.h>)
 AC_TRY_COMPILE([#include <sys/types.h>], [ulong i],
-	AC_MSG_RESULT(yes) AC_DEFINE(HAVE_ULONG), AC_MSG_RESULT(no),
+	AC_MSG_RESULT(yes); AC_DEFINE(HAVE_ULONG), AC_MSG_RESULT(no),
 	AC_MSG_RESULT(cross-compiling. No assumptions made))
 
 AC_MSG_CHECKING(for libperl)
