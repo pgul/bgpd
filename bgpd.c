@@ -27,9 +27,10 @@ char *statusstr[] =
     { "Idle", "Connect", "Active", "OpenSent", "OpenConfirm", "Established", "Unknown" };
 unsigned long mask[33];
 
-static int blockread(int h, void *buf, int size)
+static int blockread(int h, void *vbuf, int size)
 {
 	int res, len=0;
+	char *buf = (char *)vbuf;
 	while (size>0)
 	{	res = read(h, buf, size);
 		if (res<0)
@@ -47,7 +48,7 @@ static int blockread(int h, void *buf, int size)
 		}
 		len += res;
 		size -= res;
-		(char *)buf += res;
+		buf += res;
 	}
 	return len;
 }
