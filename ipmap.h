@@ -10,19 +10,11 @@
 
 #define MAPSIZE (NBITS * (1<<(MAXPREFIX-3)))
 
-#ifndef SHMMAX
-//#define SHMMAX 0x2000000
-//#define SHMMAX 0x400000
-#define SHMMAX	MAPSIZE // unlimited
-#endif
-
-#define NREGS	((MAPSIZE + SHMMAX - 1) / SHMMAX)
-
 #if NBITS>8
 typedef ushort class_type;
 #else
 typedef char class_type;
 #endif
 
-extern class_type *map[NREGS];
+extern class_type *map;
 extern ulong mapkey;

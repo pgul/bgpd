@@ -31,7 +31,7 @@ struct route_obj {
 };
 
 static struct route_obj *route_root = NULL;
-class_type *map[NREGS];
+class_type *map;
 static int last_ballanced=0;
 int prefix_cnt;
 
@@ -181,6 +181,7 @@ static class_type setclass(ulong *community, int community_len,
 			strcpy(p, "no-export-subconfed");
 		else
 			sprintf(p, "%u:%u", firstas, secondas);
+		p+=strlen(p);
 		if (p-scommunity+20>sizeof(scommunity))
 			break;
 	}
@@ -463,37 +464,20 @@ static void delroute(struct route_obj *route)
 }
 
 #if NBITS<=8
-static void shmemset(class_type *map[], int offs, char class, unsigned int size)
+static void shmemset(class_type *map, int offs, char class, unsigned int size)
 {
-	int firstreg, lastreg, i, lastoffs;
-
-	firstreg = offs/(SHMMAX/sizeof(class_type));
-	lastreg = (offs+size)/(SHMMAX/sizeof(class_type));
-	if (firstreg == lastreg)
-	{	memset(&map[firstreg][offs%(SHMMAX/sizeof(class_type))],
-		       class, size*sizeof(class_type));
-		return;
-	}
-      	memset(&map[firstreg][offs%(SHMMAX/sizeof(class_type))], class,
-               SHMMAX-(offs*sizeof(class_type))%SHMMAX);
-	firstreg++;
-	lastoffs = (offs+size)%(SHMMAX/sizeof(class_type));
-	if (lastoffs)
-		memset(&map[lastreg][0], class, lastoffs*sizeof(class_type));
-	lastreg--;
-	for (i=firstreg; i<=lastreg; i++)
-		memset(map[i], class, SHMMAX);
+	memset(&map[offs], class, size*sizeof(class_type));
 }
 
-static class_type shmgetone(class_type *map[], unsigned int offs)
+static class_type shmgetone(class_type *map, unsigned int offs)
 {
-	return map[offs/(SHMMAX/sizeof(class_type))][offs%(SHMMAX/sizeof(class_type))];
+	return map[offs];
 }
 #endif
 
-static void shmputone(class_type *map[], unsigned int offs, class_type class)
+static void shmputone(class_type *map, unsigned int offs, class_type class)
 {
-	map[offs/(SHMMAX/sizeof(class_type))][offs%(SHMMAX/sizeof(class_type))] = class;
+	map[offs] = class;
 }
 
 static void mapsetclass(ulong from, ulong to, class_type class)
@@ -673,23 +657,19 @@ void keepalive(void)
 	Log(5, "KeepAlive, total %u prefixes", prefix_cnt);
 }
 
-static int shmid[NREGS];
+static int shmid;
 
 static void freeshmem(void)
 {
-	int i;
 	struct shmid_ds buf;
-	for (i=0; i<NREGS; i++)
-	{
-		if (map[i])
-		{	shmdt(map[i]);
-			map[i] = NULL;
-		}
-		if (shmid[i] != -1)
-			if (shmctl(shmid[i], IPC_STAT, &buf) == 0)
-				if (buf.shm_nattch == 0)
-					shmctl(shmid[i], IPC_RMID, &buf);
+	if (map)
+	{	shmdt(map);
+		map = NULL;
 	}
+	if (shmid != -1)
+		if (shmctl(shmid, IPC_STAT, &buf) == 0)
+			if (buf.shm_nattch == 0)
+				shmctl(shmid, IPC_RMID, &buf);
 }
 
 static void sighnd(int signo)
@@ -700,50 +680,40 @@ static void sighnd(int signo)
 
 void init_map(int argc, char *argv[])
 {
-	int i, regsize;
 	key_t k;
 	if (argc>1 && isdigit(argv[1]))
 		k = atol(argv[1]);
 	else
 		k = mapkey;
-	for (i=0; i<NREGS; i++)
-	{	map[i] = NULL;
-		shmid[i] = -1;
-	}
+	map = NULL;
+	shmid = -1;
 	signal(SIGINT, sighnd);
 	signal(SIGTERM, sighnd);
 	signal(SIGQUIT, sighnd);
 	atexit(freeshmem);
 shmagain:
-	for (i=0; i<NREGS; i++)
+	shmid = shmget(k, MAPSIZE, 0600);
+	if (shmid == -1)
 	{
-		if (MAPSIZE-i*SHMMAX>SHMMAX)
-			regsize = SHMMAX;
-		else
-			regsize = MAPSIZE-i*SHMMAX;
-		shmid[i] = shmget(k+i, regsize, 0600);
-		if (shmid[i] == -1)
-		{
-			if (errno != ENOENT)
-			{	Log(0, "Can't get shared memory (key %u, size %u): %s!", k, regsize, strerror(errno));
-				exit(1);
-			}
-			shmid[i] = shmget(k+i, regsize, IPC_CREAT|IPC_EXCL|0600);
-			if (shmid[i] == -1)
-			{	if (errno != EEXIST)
-				{	Log(0, "Can't allocate %u bytes of shared memory: %s!", regsize, strerror(errno));
-					exit(1);
-				}
-				sleep(1);
-				goto shmagain;
-			}
-			Log(5, "Shared memory segment created");
-		} else
-			Log(5, "Shared memory segment attached");
-		map[i] = shmat(shmid[i], NULL, 0);
-		if (map[i] == NULL)
-		{	Log(0, "Can't attach shared memory: %s!", strerror(errno));
+		if (errno != ENOENT)
+		{	Log(0, "Can't get shared memory (key %u, size %u): %s!", k, MAPSIZE, strerror(errno));
 			exit(1);
 		}
+		shmid = shmget(k, MAPSIZE, IPC_CREAT|IPC_EXCL|0600);
+		if (shmid == -1)
+		{	if (errno != EEXIST)
+			{	Log(0, "Can't allocate %u bytes of shared memory: %s!", MAPSIZE, strerror(errno));
+				exit(1);
+			}
+			sleep(1);
+			goto shmagain;
+		}
+		Log(5, "Shared memory segment created");
+	} else
+		Log(5, "Shared memory segment attached");
+	map = shmat(shmid, NULL, 0);
+	if (map == NULL)
+	{	Log(0, "Can't attach shared memory: %s!", strerror(errno));
+		exit(1);
 	}
 }
