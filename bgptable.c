@@ -765,6 +765,8 @@ static void sighnd(int signo)
 void init_map(int argc, char *argv[])
 {
 	key_t k;
+	int created=0;
+
 	if (argc>1 && isdigit(argv[1][0]))
 		k = atol(argv[1]);
 	else
@@ -793,12 +795,13 @@ shmagain:
 			goto shmagain;
 		}
 		Log(5, "Shared memory segment created");
-		do_initmap();
+		created=1;
 	} else
 		Log(5, "Shared memory segment attached");
 	map = shmat(shmid, NULL, 0);
 	if (map == NULL)
 	{	Log(0, "Can't attach shared memory: %s!", strerror(errno));
 		exit(1);
-	}
+	} else if (created)
+		do_initmap();
 }
