@@ -137,18 +137,20 @@ static void perlinitmap(void)
    }
 }
 
-static class_type perlsetclass(char *community, char *aspath)
+static class_type perlsetclass(char *community, char *aspath, char *prefix)
 {
    char *prc;
-   SV *svcommunity, *svaspath, *svret;
+   SV *svcommunity, *svaspath, *svprefix, *svret;
    STRLEN n_a;
    class_type class;
 
    dSP;
    svcommunity = perl_get_sv("community", TRUE);
    svaspath    = perl_get_sv("aspath", TRUE);
+   svprefix    = perl_get_sv("prefix", TRUE);
    sv_setpv(svcommunity, community);
    sv_setpv(svaspath, aspath);
+   sv_setpv(svprefix, prefix);
    ENTER;
    SAVETMPS;
    PUSHMARK(SP);
@@ -185,27 +187,11 @@ static class_type perlsetclass(char *community, char *aspath)
 }
 
 static class_type setclass(ulong *community, int community_len,
-                           ushort *aspath, int aspath_len)
+                           ushort *aspath, int aspath_len,
+                           ulong prefix, ushot prefix_len)
 {
-#if 0
 	int i;
-	class_type class;
-	ushort firstas, secondas;
-
-	class=0;
-	for (i=0; i<community_len; i++)
-	{	firstas=ntohs(*(ushort *)(community+i));
-		secondas=ntohs(((ushort *)(community+i))[1]);
-		if ((firstas==15497 && secondas==10) ||
-		    (firstas==15497 && secondas==16545) ||
-		    (firstas==15497 && secondas==3254) ||
-		    (firstas==16545 && secondas==16545))
-			class=1;
-	}
-	return class;
-#else
-	int i;
-	char saspath[256], scommunity[256], *p;
+	char saspath[256], scommunity[256], sprefix[32], *p;
 	ushort firstas, secondas;
 
 	saspath[0] = scommunity[0] = '\0';
@@ -234,8 +220,8 @@ static class_type setclass(ulong *community, int community_len,
 		if (p-scommunity+20>sizeof(scommunity))
 			break;
 	}
-	return perlsetclass(scommunity, saspath);
-#endif
+	snprintf(sprefix, sizeof(sprefix), "%s/%u", inet_ntoa(*((struct in_addr *)&prefix)), prefix_len);
+	return perlsetclass(scommunity, saspath, sprefix);
 }
 
 static int compare(struct route_obj *a, struct route_obj *b)
@@ -656,7 +642,7 @@ void update(ulong prefix, int prefix_len, int community_len, ulong *community,
 	struct route_obj r, *p;
 	int added;
 
-	r.class = setclass(community, community_len, aspath, aspath_len);
+	r.class = setclass(community, community_len, aspath, aspath_len, prefix, prefix_len);
 	r.ip = ntohl(prefix);
 	r.prefix_len = (ushort)prefix_len;
 	r.left = r.right = r.parent = NULL;

@@ -6,6 +6,8 @@ sub initmap
 
 sub setclass
 {
+# available variables:
+# $community, $aspath, $prefix
 	if ($community =~ /^(.* )?15497:(10|16545|3254)|16545:16545( .*)?$/)
 	{	return 1;
 	}
