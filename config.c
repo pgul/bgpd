@@ -10,6 +10,7 @@
 #include <arpa/inet.h>
 #include <netdb.h>
 #include "bgpd.h"
+#include "ipmap.h"
 
 ushort my_as, remote_as;
 ulong router_id, remote;
@@ -31,7 +32,7 @@ int config(char *confname)
 	holdtime = 180;
 	ballance_cnt = 1000;
 	maxdepth = 50;
-	mapkey = *(ulong *)"gul@";
+	mapkey = MAPKEY;
 	my_as = remote_as = 0;
 	router_id = remote = (ulong)-1;
 	strcpy(perlfile, "bgpd.pl");

@@ -1,4 +1,5 @@
-#define NBITS		16	// 1..16, power of 2
+#define MAPKEY		*(unsigned long *)"gul@"
+#define NBITS		2	// 1..16, power of 2
 #define MAXPREFIX	24	// 0..32, maximum processible prefix length
 // WARNING: NBITS 16 and MAXPREFIX 32 requires 8G of shared memory!
 // NBITS 1 and MAXPREFIX 24 - 2M
