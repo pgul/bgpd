@@ -20,6 +20,7 @@ ushort holdtime;
 int ballance_cnt, maxdepth;
 ulong mapkey;
 char perlfile[256], plsetclass[256], plinitmap[256], plbgpup[256];
+char pidfile[256] = PIDFILE;
 
 int config(char *confname)
 {
@@ -171,6 +172,10 @@ int config(char *confname)
 			*p=0;
 			strncpy(perlfile, str, sizeof(perlfile));
 			strncpy(plsetclass, p+2, sizeof(plsetclass));
+			continue;
+		}
+		if (strcasecmp(str, "pidfile")==0)
+		{	strncpy(pidfile, p, sizeof(pidfile));
 			continue;
 		}
 

@@ -508,6 +508,11 @@ int usage(void)
 	return 0;
 }
 
+void rmpid(void)
+{
+	unlink(pidfile);
+}
+
 int main(int argc, char *argv[])
 {
 	int sockin, sockout, newsock;
@@ -543,6 +548,17 @@ int main(int argc, char *argv[])
 	confname=argv[optind];
 	if (config(confname))
 		exit(3);
+	if (pidfile[0])
+	{
+		FILE *f=fopen(pidfile, "w");
+		if (f)
+		{
+			fprintf(f, "%u\n", (unsigned)getpid());
+			fclose(f);
+			atexit(rmpid);
+		} else
+			fprintf(stderr, "Can't create %s: %s\n", pidfile, strerror(errno));
+	}
 	setstatus(IDLE);
 	init_map(argc, argv);
 	/* open listening socket */

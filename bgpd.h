@@ -1,4 +1,5 @@
 #define CONFNAME CONFDIR "/bgpd.conf"
+#define PIDFILE  "/var/run/bgpd.pid"
 
 struct bgp_hdr {
 	char marker[16];
@@ -57,6 +58,7 @@ extern ushort holdtime;
 extern int ballance_cnt, maxdepth;
 extern ushort remote_as;
 extern char perlfile[], plsetclass[], plinitmap[], plbgpup[];
+extern char pidfile[];
 extern int mapinited;
 
 void Log(int level, char *format, ...);
