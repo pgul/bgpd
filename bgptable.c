@@ -43,11 +43,11 @@ static void mapsetclass(ulong from, ulong to, class_type class);
 #if 1
 void boot_DynaLoader(CV *cv);
 
-static XS(perl_setclass)
+static XS(perl_initclass)
 {
   dXSARGS;
   char *ip;
-  char *class;
+  int class;
   STRLEN n_a;
   char *p;
   int preflen=24;
@@ -58,14 +58,14 @@ static XS(perl_setclass)
     XSRETURN_EMPTY;
   }
   ip    = (char *)SvPV(ST(0), n_a); if (n_a == 0) ip    = "";
-  class = (char *)SvPV(ST(1), n_a); if (n_a == 0) class = "";
+  class = SvIV(ST(1));
   p=strchr(ip, '/');
   if (p)
   { *p++='\0';
     preflen=atoi(p);
   }
   ipaddr = ntohl(inet_addr(ip));
-  mapsetclass(ipaddr, ipaddr+(1<<(32-preflen))-1, atoi(class));
+  mapsetclass(ipaddr, ipaddr+(1<<(32-preflen))-1, (class_type)class);
   XSRETURN_EMPTY;
 }
 
@@ -74,7 +74,7 @@ static void xs_init(void)
   static char *file = __FILE__;
   dXSUB_SYS;
   newXS("DynaLoader::boot_DynaLoader", boot_DynaLoader, file);
-  newXS("setclass",  perl_setclass,  file);
+  newXS("initclass",  perl_initclass,  file);
 }
 #endif
 
