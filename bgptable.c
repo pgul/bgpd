@@ -39,6 +39,7 @@ static PerlInterpreter *perl = NULL;
 
 static struct route_obj *findroute(struct route_obj *new, int addnew, int *added);
 static void mapsetclass(ulong from, ulong to, class_type class);
+static int chclass(struct route_obj *obj);
 
 #if 1
 void boot_DynaLoader(CV *cv);
@@ -47,11 +48,10 @@ static XS(perl_initclass)
 {
   dXSARGS;
   char *ip;
-  int class;
   STRLEN n_a;
   char *p;
-  int preflen=24;
-  unsigned long ipaddr;
+  int preflen=24, class, added;
+  struct route_obj r, *pr;
 
   if (items != 2)
   { Log(0, "Wrong params number to setclass (need 2, exist %d)", items);
@@ -64,8 +64,20 @@ static XS(perl_initclass)
   { *p++='\0';
     preflen=atoi(p);
   }
-  ipaddr = ntohl(inet_addr(ip));
-  mapsetclass(ipaddr, ipaddr+(1<<(32-preflen))-1, (class_type)class);
+  r.class = (class_type)class;
+  r.ip = ntohl(inet_addr(ip));
+  r.prefix_len = (ushort)preflen;
+  r.left = r.right = r.parent = NULL;
+  pr = findroute(&r, 1, &added);
+  if (!pr)
+  { Log(0, "Internal error!");
+    exit(2);
+  }
+  if (!added && pr->class == r.class)
+    return;
+  if (!added) pr->class = r.class;
+  chclass(pr);
+
   XSRETURN_EMPTY;
 }
 
