@@ -472,6 +472,42 @@ send_keepalive:
 	}
 }
 
+
+#ifndef HAVE_DAEMON
+int daemon(int nochdir, int noclose)
+{
+	int i;
+	if (!nochdir) chdir("/");
+	if (!noclose)
+	{
+		i=open("/dev/null", O_RDONLY);
+		if (i!=-1)
+		{	if (i>0) dup2(i, 0);
+			close(i);
+		}
+		i=open("/dev/null", O_WRONLY);
+		if (i!=-1)
+		{	if (i>1) dup2(i, 1);
+			if (i>2) dup2(i, 2);
+			close(i);
+		}
+	}
+	if ((i=fork()) == -1) return -1;
+	if (i>0) exit(0);
+	setsid();
+	return 0;
+}
+#endif
+
+int usage(void)
+{
+	printf("BGP daemon      " __DATE__ "\n");
+	printf("    Usage:\n");
+	printf("bgpd [-d] [config]\n");
+	printf("  -d  - daemonize\n");
+	return 0;
+}
+
 int main(int argc, char *argv[])
 {
 	int sockin, sockout, newsock;
@@ -480,12 +516,32 @@ int main(int argc, char *argv[])
 	fd_set fdr, fdw, fde;
 	struct timeval tv;
 	time_t select_wait, selectstart;
-	int i, r;
+	int i, r, daemonize;
+	char *confname;
 
 	mask[0]=0;
 	for (i=1; i<=32; i++)
 		mask[i]=htonl(0xfffffffful<<(32-i));
-	if (config(CONFNAME))
+	confname=CONFNAME;
+	daemonize=0;
+	while ((i=getopt(argc, argv, "dh?")) != -1)
+	{
+		switch (i)
+		{
+			case 'd':
+				daemonize=1; break;
+			case 'h':
+			case '?':
+				usage(); return 1;
+			default:
+				fprintf(stderr,"Unknown option -%c\n", (char)i);
+				usage();
+				return 2;
+		}
+	}
+	if (argc>optind)
+	confname=argv[optind];
+	if (config(confname))
 		exit(3);
 	setstatus(IDLE);
 	init_map(argc, argv);
