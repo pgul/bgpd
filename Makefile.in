@@ -8,7 +8,7 @@ COPT=-Wall -funsigned-char @DEFS@ -DCONFDIR=\"@sysconfdir@\" @CFLAGS@
 	@echo Compiling $*.c...
 	@$(CC) -c $(COPT) -o $*.o $*.c
 
-SRCS=mgpd.c bgptable.c config.c
+SRCS=bgpd.c bgptable.c config.c
 OBJS=${SRCS:.c=.o}
 
 all:	bgpd addrq
