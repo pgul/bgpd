@@ -12,11 +12,11 @@
 #include <arpa/inet.h>
 #include <sys/ipc.h>
 #include <sys/shm.h>
-#include "../bgpd/ipmap.h"
+#include "ipmap.h"
 
 static class_type *map;
 static int shmid;
-static ulong mapkey;
+unsigned long int mapkey;
 
 void Log(int level, char *format, ...)
 {
@@ -101,7 +101,7 @@ static void init_map(int argc, char *argv[])
 
 int main(int argc, char *argv[])
 {
-	ulong addr;
+	unsigned long int addr;
 	mapkey = MAPKEY;
 	if (argc>1 && (addr=inet_addr(argv[1]))!=INADDR_NONE)
 	{	init_map(0, NULL);

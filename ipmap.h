@@ -16,10 +16,10 @@
 #define MAPSIZE (NBITS * (1<<(MAXPREFIX-3)))
 
 #if NBITS>8
-typedef ushort class_type;
+typedef unsigned short int class_type;
 #else
 typedef char class_type;
 #endif
 
 extern class_type *map;
-extern ulong mapkey;
+extern unsigned long int mapkey;

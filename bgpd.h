@@ -1,6 +1,10 @@
 #define CONFNAME CONFDIR "/bgpd.conf"
 #define PIDFILE  "/var/run/bgpd.pid"
 
+#ifndef HAVE_ULONG
+typedef unsigned long int ulong;
+#endif
+
 struct bgp_hdr {
 	char marker[16];
 	ushort length;
