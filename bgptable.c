@@ -188,7 +188,7 @@ static class_type perlsetclass(char *community, char *aspath, char *prefix)
 
 static class_type setclass(ulong *community, int community_len,
                            ushort *aspath, int aspath_len,
-                           ulong prefix, ushot prefix_len)
+                           ulong prefix, ushort prefix_len)
 {
 	int i;
 	char saspath[256], scommunity[256], sprefix[32], *p;
