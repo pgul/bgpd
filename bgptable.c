@@ -736,7 +736,7 @@ static void sighnd(int signo)
 void init_map(int argc, char *argv[])
 {
 	key_t k;
-	if (argc>1 && isdigit(argv[1]))
+	if (argc>1 && isdigit(argv[1][0]))
 		k = atol(argv[1]);
 	else
 		k = mapkey;
