@@ -236,6 +236,7 @@ static int bgpsession(int sock)
 		FD_ZERO(&fd);
 		FD_SET(sock, &fd);
 		tv.tv_sec = hold_time/3;
+		tv.tv_usec=0;
 		rest_time = time(NULL)-keepalive_sent;
 		if (hold_time)
 		{	if (rest_time >= hold_time/3)
@@ -281,7 +282,7 @@ send_keepalive:
 			continue;
 		}
 		if (r==-1)
-		{	Log(0, "Socket error: %s", strerror(errno));
+		{	Log(0, "Select error: %s", strerror(errno));
 			return 1;
 		}
 		/* message arrived */
@@ -566,21 +567,21 @@ errconnect:
 				if (r==1 && select_wait>0) goto repselect;
 			}
 			if (sockout!=-1 && FD_ISSET(sockout, &fdw))
-			{	r=0; i=sizeof(r);
+			{	int rr=0; i=sizeof(r);
 				if (getsockopt(sockout, SOL_SOCKET, SO_ERROR,
-				               &r, &i))
+				               &rr, &i))
 				{	Log(0, "getsockopt: %s", strerror(errno));
 					goto errconnect;
 				}
-				if (r)
-				{	Log(0, "connect(): %s", strerror(r));
+				if (rr)
+				{	Log(0, "connect(): %s", strerror(rr));
 					goto errconnect;
 				}
 				/* connected */
 				setstatus(CONNECT);
-				r = fcntl (sockout, F_GETFL, 0) ;
-				if (r >= 0)
-					r = fcntl (sockout, F_SETFL, r & ~O_NONBLOCK) ;
+				rr = fcntl (sockout, F_GETFL, 0) ;
+				if (rr >= 0)
+					rr = fcntl (sockout, F_SETFL, rr & ~O_NONBLOCK) ;
 				if (sockin!=-1) close(sockin);
 				sockin=-1;
 				Log(4, "Outgoing bgp session");
