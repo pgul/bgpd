@@ -676,6 +676,7 @@ void reset_table(void)
 {
 	struct route_obj *cur = route_root, *p;
 
+	if (route_root==NULL) return;
 	while (cur)
 	{	if (cur->left)
 			cur=cur->left;
@@ -694,6 +695,10 @@ void reset_table(void)
 	}
 	route_root = NULL;
 	Log(2, "BGP table cleared");
+}
+
+void do_initmap(void)
+{
 	mapsetclass(0, 0xfffffffful, 0);
 	last_ballanced = 0;
 	prefix_cnt = 0;
@@ -762,6 +767,7 @@ shmagain:
 			goto shmagain;
 		}
 		Log(5, "Shared memory segment created");
+		do_initmap();
 	} else
 		Log(5, "Shared memory segment attached");
 	map = shmat(shmid, NULL, 0);

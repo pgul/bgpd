@@ -349,6 +349,7 @@ send_keepalive:
 		if (!wasupdate)
 		{	wasupdate=1;
 			reset_table();
+			do_initmap();
 		}
 		withdraw_length = ntohs(*(ushort *)(hdr.pktdata));
 		withdraw_routes = hdr.pktdata+2;
@@ -586,6 +587,7 @@ errconnect:
 				sockin=-1;
 				Log(4, "Outgoing bgp session");
 				bgpsession(sockout);
+				reset_table();
 			}
 			if (sockin!=-1 && FD_ISSET(sockin, &fdr))
 			{	/* incoming connection */
@@ -607,6 +609,7 @@ errconnect:
 						Log(4, "Incoming bgp session");
 						bgpsession(newsock);
 						close(newsock);
+						reset_table();
 					}
 				}
 			}

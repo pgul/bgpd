@@ -64,5 +64,6 @@ void update(ulong prefix, int prefix_len, int community_len, ulong *community,
 void withdraw(ulong prefix, int prefix_len);
 void reset_table(void);
 void init_map(int argc, char *argv[]);
+void do_initmap(void);
 void keepalive(void);
 int config(char *confname);
