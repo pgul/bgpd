@@ -430,7 +430,11 @@ send_keepalive:
 				community_len=attr_length/4;
 				continue;
 			}
-			if ((attr_flags & 0x40) == 0)
+			if (attr_code == 10)
+			{	/* RR cluster ID, ignore */
+				continue;
+			}
+			if ((attr_flags & 0x80) == 0)
 			{	send_notify(sock, 4, 2); /* Unrecognized well-known attribute */
 				Log(0, "Unrecognized well-known attribute type %u length %u", attr_code, attr_length);
 				return 1;
