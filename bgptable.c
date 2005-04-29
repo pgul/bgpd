@@ -23,6 +23,13 @@
 #include "bgpd.h"
 #include "ipmap.h"
 
+#ifndef pTHX_
+#define pTHX_
+#endif
+#ifndef pTHX
+#define pTHX
+#endif
+
 struct route_obj {
 	ulong ip;
 	char prefix_len;
@@ -42,7 +49,6 @@ static struct route_obj *findroute(struct route_obj *new, int addnew, int *added
 static void mapsetclass(ulong from, ulong to, class_type class);
 static int chclass(struct route_obj *obj);
 
-#if 1
 void boot_DynaLoader(pTHX_ CV *cv);
 
 static XS(perl_initclass)
@@ -93,7 +99,6 @@ static void xs_init(pTHX)
   newXS("DynaLoader::boot_DynaLoader", boot_DynaLoader, file);
   newXS("initclass",  perl_initclass,  file);
 }
-#endif
 
 static void exitperl(void)
 {
@@ -117,11 +122,7 @@ static int PerlStart(void)
    }
    perl = perl_alloc();
    perl_construct(perl);
-#if 1
    rc=perl_parse(perl, xs_init, 2, perlargs, NULL);
-#else
-   rc=perl_parse(perl, NULL, 2, perlargs, NULL);
-#endif
    if (rc)
    { Log(0, "Can't parse %s", perlfile);
      perl_destruct(perl);
