@@ -236,7 +236,6 @@ static void communitystr(int comm_len, ulong *community, char *scomm, int len)
 	int i;
 
 	p = scomm;
-	*p = '\0';
 	for (i=0; i<comm_len; i++)
 	{	if (*scomm) *p++=' ';
 		firstas=ntohs(*(ushort *)(community+i));
@@ -667,6 +666,11 @@ void withdraw(ulong prefix, int prefix_len)
 {
 	struct route_obj r, parent, *p, *pp;
 
+	if (perlupdate(prefix, prefix_len, 0, NULL, 0, NULL) == 0)
+	{
+		Log(2, "Filtered withdraw route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+		return;
+	}
 	r.ip=ntohl(prefix); r.prefix_len=prefix_len;
 	p=findroute(&r, 0, NULL);
 	if (p==NULL)
