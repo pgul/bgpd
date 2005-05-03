@@ -21,3 +21,14 @@ sub setclass
 	}
 	return 0;
 }
+
+sub update
+{
+# available variables:
+# community, $aspath, $prefix
+# Return 0 to deny update, 1 to accept
+{
+	return 0 if $prefix =~ /(10|127)\./;
+	return 1;
+}
+

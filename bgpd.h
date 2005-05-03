@@ -61,7 +61,7 @@ extern time_t waittime;
 extern ushort holdtime;
 extern int ballance_cnt, maxdepth;
 extern ushort remote_as;
-extern char perlfile[], plsetclass[], plinitmap[], plbgpup[];
+extern char perlfile[], plsetclass[], plinitmap[], plbgpup[], plupdate[];
 extern char pidfile[];
 extern int mapinited;
 

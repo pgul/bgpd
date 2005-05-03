@@ -47,7 +47,9 @@ static PerlInterpreter *perl = NULL;
 
 static struct route_obj *findroute(struct route_obj *new, int addnew, int *added);
 static void mapsetclass(ulong from, ulong to, class_type class);
-static int chclass(struct route_obj *obj);
+static int  chclass(struct route_obj *obj);
+static int  perlupdate(ulong prefix, int prefix_len,
+           int community_len, ulong *community, int aspath_len, ushort *aspath);
 
 void boot_DynaLoader(pTHX_ CV *cv);
 
@@ -227,26 +229,16 @@ static class_type perlsetclass(char *community, char *aspath, char *prefix)
    return class;
 }
 
-static class_type setclass(ulong *community, int community_len,
-                           ushort *aspath, int aspath_len,
-                           ulong prefix, ushort prefix_len)
+static void communitystr(int comm_len, ulong *community, char *scomm, int len)
 {
-	int i;
-	char saspath[256], scommunity[256], sprefix[32], *p;
+	char *p;
 	ushort firstas, secondas;
+	int i;
 
-	saspath[0] = scommunity[0] = '\0';
-	p = saspath;
-	for (i=0; i<aspath_len; i++)
-	{	if (*saspath) *p++=' ';
-		sprintf(p, "%u", ntohs(aspath[i]));
-		p+=strlen(p);
-		if (p-saspath+15>sizeof(saspath))
-			break;
-	}
-	p = scommunity;
-	for (i=0; i<community_len; i++)
-	{	if (*scommunity) *p++=' ';
+	p = scomm;
+	*p = '\0';
+	for (i=0; i<comm_len; i++)
+	{	if (*scomm) *p++=' ';
 		firstas=ntohs(*(ushort *)(community+i));
 		secondas=ntohs(((ushort *)(community+i))[1]);
 		if (firstas == 0xffff && secondas == 0xff01)
@@ -258,9 +250,35 @@ static class_type setclass(ulong *community, int community_len,
 		else
 			sprintf(p, "%u:%u", firstas, secondas);
 		p+=strlen(p);
-		if (p-scommunity+20>sizeof(scommunity))
+		if (p-scomm+20>len)
 			break;
 	}
+}
+
+static void aspathstr(int aspath_len, ushort *aspath, char *saspath, int len)
+{
+	char *p;
+	int i;
+
+	saspath[0] = '\0';
+	p = saspath;
+	for (i=0; i<aspath_len; i++)
+	{	if (*saspath) *p++=' ';
+		sprintf(p, "%u", ntohs(aspath[i]));
+		p+=strlen(p);
+		if (p-saspath+15>sizeof(saspath))
+			break;
+	}
+}
+
+static class_type setclass(ulong *community, int community_len,
+                           ushort *aspath, int aspath_len,
+                           ulong prefix, ushort prefix_len)
+{
+	char saspath[256], scommunity[256], sprefix[32];
+
+	aspathstr(aspath_len, aspath, saspath, sizeof(saspath));
+	communitystr(community_len, community, scommunity, sizeof(scommunity));
 	snprintf(sprefix, sizeof(sprefix), "%s/%u", inet_ntoa(*((struct in_addr *)&prefix)), prefix_len);
 	return perlsetclass(scommunity, saspath, sprefix);
 }
@@ -683,6 +701,11 @@ void update(ulong prefix, int prefix_len, int community_len, ulong *community,
 	struct route_obj r, *p;
 	int added;
 
+	if (perlupdate(prefix, prefix_len, community_len, community, aspath_len, aspath) == 0)
+	{
+		Log(2, "Filtered route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+		return;
+	}
 	r.class = setclass(community, community_len, aspath, aspath_len, prefix, prefix_len);
 	r.ip = ntohl(prefix);
 	r.prefix_len = (ushort)prefix_len;
@@ -810,3 +833,59 @@ shmagain:
 	} else if (created)
 		do_initmap();
 }
+
+static int perlupdate(ulong prefix, int prefix_len, int community_len, ulong *community, int aspath_len, ushort *aspath)
+{
+   char *prc;
+   char sprefix[32], scommunity[256], saspath[256];
+   SV *svcommunity, *svaspath, *svprefix, *svret;
+   STRLEN n_a;
+   int rc;
+
+   dSP;
+   if (plupdate[0]=='\0') return 1;
+   svcommunity = perl_get_sv("community", TRUE);
+   svaspath    = perl_get_sv("aspath", TRUE);
+   svprefix    = perl_get_sv("prefix", TRUE);
+   sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+   aspathstr(aspath_len, aspath, saspath, sizeof(saspath));
+   communitystr(community_len, community, scommunity, sizeof(scommunity));
+   sv_setpv(svcommunity, scommunity);
+   sv_setpv(svaspath, saspath);
+   sv_setpv(svprefix, sprefix);
+   ENTER;
+   SAVETMPS;
+   PUSHMARK(SP);
+   PUTBACK;
+   perl_call_pv(plupdate, G_EVAL|G_SCALAR);
+   SPAGAIN;
+   svret=POPs;
+   if (SvTRUE(svret))
+     prc = strdup(SvPV(svret, n_a));
+   else
+     prc = NULL;
+   PUTBACK;
+   FREETMPS;
+   LEAVE;
+   if (SvTRUE(ERRSV))
+   {
+     Log(0, "Perl %s() eval error: %s", plupdate, SvPV(ERRSV, n_a));
+     plupdate[0] = '\0';
+     prc = NULL;
+   }
+   if (n_a == 0 && prc)
+   {
+     free(prc);
+     prc = NULL;
+   }
+   if (prc)
+   { 
+     rc = atoi(prc);
+     free(prc);
+   } else
+   {
+     rc = 1;
+   }
+   return rc;
+}
+
