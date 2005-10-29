@@ -5,6 +5,10 @@
 typedef unsigned long int ulong;
 #endif
 
+#ifndef HAVE_SOCKLEN_T
+typedef int socklen_t;
+#endif
+
 struct bgp_hdr {
 	char marker[16];
 	ushort length;

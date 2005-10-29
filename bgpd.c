@@ -518,7 +518,7 @@ int main(int argc, char *argv[])
 {
 	int sockin, sockout, newsock;
 	struct sockaddr_in serv_addr, sin, client_addr;
-	int client_addr_len;
+	socklen_t client_addr_len;
 	fd_set fdr, fdw, fde;
 	struct timeval tv;
 	time_t select_wait, selectstart;
@@ -649,7 +649,8 @@ errconnect:
 				if (r==1 && select_wait>0) goto repselect;
 			}
 			if (sockout!=-1 && FD_ISSET(sockout, &fdw))
-			{	int rr=0; i=sizeof(r);
+			{	int rr=0;
+			       	socklen_t i=sizeof(r);
 				if (getsockopt(sockout, SOL_SOCKET, SO_ERROR,
 				               &rr, &i))
 				{	Log(0, "getsockopt: %s", strerror(errno));

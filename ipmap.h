@@ -21,5 +21,4 @@ typedef unsigned short int class_type;
 typedef char class_type;
 #endif
 
-extern class_type *map;
 extern unsigned long int mapkey;
