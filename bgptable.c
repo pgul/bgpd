@@ -265,7 +265,7 @@ static void aspathstr(int aspath_len, ushort *aspath, char *saspath, int len)
 	{	if (*saspath) *p++=' ';
 		sprintf(p, "%u", ntohs(aspath[i]));
 		p+=strlen(p);
-		if (p-saspath+15>sizeof(saspath))
+		if (p-saspath+15>len)
 			break;
 	}
 }
