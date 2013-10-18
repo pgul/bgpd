@@ -12,14 +12,16 @@
 #include "bgpd.h"
 #include "ipmap.h"
 
-ushort my_as, remote_as;
-ulong router_id, remote;
-ushort bindport, port;
-time_t waittime;
-ushort holdtime;
+uint16_t my_as, remote_as;
+uint32_t router_id;
+in_addr_t remote;
+uint16_t bindport, port;
+time_t waittime, reconnect_time;
+uint16_t holdtime;
 int ballance_cnt, maxdepth;
-ulong mapkey;
-char perlfile[256], plsetclass[256], plinitmap[256], plbgpup[256],plupdate[256];
+unsigned long int mapkey;
+char perlfile[256], plsetclass[256], plinitmap[256], plbgpup[256], plbgpdown[256];
+char plfilter[256], plupdate[256], plwithdraw[256];
 char pidfile[256] = PIDFILE;
 
 int config(char *confname)
@@ -30,17 +32,22 @@ int config(char *confname)
 
 	bindport = port = htons(179);
 	waittime = 60;
+	reconnect_time = 10;
 	holdtime = 180;
 	ballance_cnt = 1000;
 	maxdepth = 50;
 	mapkey = MAPKEY;
 	my_as = remote_as = 0;
-	router_id = remote = (ulong)-1;
+	router_id = (uint32_t)-1;
+	remote = INADDR_NONE;
 	strcpy(perlfile, "bgpd.pl");
 	strcpy(plsetclass, "setclass");
 	strcpy(plinitmap, "initmap");
 	strcpy(plbgpup, "bgpup");
+	strcpy(plbgpdown, "bgpdown");
+	strcpy(plfilter, "filter");
 	strcpy(plupdate, "update");
+	strcpy(plwithdraw, "withdraw");
 	f = fopen(confname, "r");
 	if (f == NULL)
 	{	Log(0, "Can't open %s: %s", confname, strerror(errno));
@@ -49,133 +56,147 @@ int config(char *confname)
 	while (fgets(str, sizeof(str), f))
 	{
 		p=strchr(str, '\n');
-		if (p) *p='\0';
-		p=strchr(str, '#');
-		if (p) *p='\0';
-		for (p=str; *p && isspace(*p); p++);
-		if (p!=str) strcpy(str, p);
-		if (*p=='\0') continue;
-		for (p=str+strlen(str)-1; isspace(*p); *p--='\0');
-		p=strchr(str, '=');
-		if (p==NULL)
+		if (p) *p = '\0';
+		p = strchr(str, '#');
+		if (p) *p = '\0';
+		for (p = str; *p && isspace(*p); p++);
+		if (p != str) strcpy(str, p);
+		if (*p == '\0') continue;
+		for (p = str + strlen(str) - 1; isspace(*p); *p-- = '\0');
+		p = strchr(str, '=');
+		if (p == NULL)
 		{	Log(1, "Unknown line in config: '%s'", str);
 			continue;
 		}
-		*p++='\0';
+		*p++ = '\0';
 		while (*p & isspace(*p)) p++;
 		if (*str == '\0')
-		{	str[strlen(str)]='=';
+		{	str[strlen(str)] = '=';
 			Log(1, "Unknown line in config: '%s'", str);
 			continue;
 		}
-		for (pp=str+strlen(str)-1; isspace(*p); *p--='\0');
-		if (strcasecmp(str, "my-as")==0)
+		for (pp = str + strlen(str) - 1; isspace(*p); *p-- = '\0');
+		if (strcasecmp(str, "my-as") == 0)
 		{	my_as = atoi(p);
-			if (!isdigit(*p) || my_as<=0)
+			if (!isdigit(*p) || my_as <= 0)
 			{	Log(0, "Incorrect my-as=%s in config!", p);
 				return 1;
 			}
 			continue;
 		}
-		if (strcasecmp(str, "remote-as")==0)
+		if (strcasecmp(str, "remote-as") == 0)
 		{	remote_as = atoi(p);
-			if (!isdigit(*p) || remote_as<=0)
+			if (!isdigit(*p) || remote_as <= 0)
 			{	Log(0, "Incorrect remote-as=%s in config!", p);
 				return 1;
 			}
 			continue;
 		}
-		if (strcasecmp(str, "router-id")==0)
+		if (strcasecmp(str, "router-id") == 0)
 		{	router_id = inet_addr(p);
-			if (router_id == (ulong)-1)
+			if (router_id == (uint32_t)-1)
 			{	Log(0, "Incorrect router-id=%s in config!", p);
 				return 1;
 			}
 			continue;
 		}
-		if (strcasecmp(str, "remote")==0)
+		if (strcasecmp(str, "remote") == 0)
 		{	remote = inet_addr(p);
-			if (remote == (ulong)-1)
+			if (remote == INADDR_NONE)
 			{	Log(0, "Incorrect remote=%s in config!", p);
 				return 1;
 			}
 			continue;
 		}
-		if (strcasecmp(str, "bindport")==0)
+		if (strcasecmp(str, "bindport") == 0)
 		{	entry = getservbyname(p, "tcp");
 			if (entry)
 			{	bindport = entry->s_port;
 			} else if (isdigit(*(p)))
-			{	bindport = htons((ushort)atoi(p));
+			{	bindport = htons((uint16_t)atoi(p));
 			} else
 			{	Log(1, "Unknown bindport=%s ignored", p);
 			}
 			continue;
 		}
-		if (strcasecmp(str, "port")==0)
+		if (strcasecmp(str, "port") == 0)
 		{	entry = getservbyname(p, "tcp");
 			if (entry)
 			{	port = entry->s_port;
 			} else if (isdigit(*(p)))
-			{	port = htons((ushort)atoi(p));
+			{	port = htons((uint16_t)atoi(p));
 			} else
 			{	Log(1, "Unknown port=%s ignored", p);
 			}
 			continue;
 		}
-		if (strcasecmp(str, "waittime")==0)
+		if (strcasecmp(str, "waittime") == 0)
 		{	waittime = atoi(p);
-			if (!isdigit(*p) || waittime<=0)
+			if (!isdigit(*p) || waittime <= 0)
 			{	Log(0, "Incorrect waittime=%s in config!", p);
 				return 1;
 			}
 			continue;
 		}
-		if (strcasecmp(str, "holdtime")==0)
+		if (strcasecmp(str, "holdtime") == 0)
 		{	holdtime = atoi(p);
-			if (!isdigit(*p) || holdtime<=0)
+			if (!isdigit(*p) || holdtime <= 0)
 			{	Log(0, "Incorrect holdtime=%s in config!", p);
 				return 1;
 			}
 			continue;
 		}
-		if (strcasecmp(str, "ballance-check")==0)
+		if (strcasecmp(str, "reconnect-time") == 0)
+		{	reconnect_time = atoi(p);
+			if (!isdigit(*p) || reconnect_time <= 0)
+			{	Log(0, "Incorrect reconnect-time=%s in config!", p);
+				return 1;
+			}
+			continue;
+		}
+		if (strcasecmp(str, "ballance-check") == 0)
 		{	ballance_cnt = atoi(p);
-			if (!isdigit(*p) || ballance_cnt<=0)
+			if (!isdigit(*p) || ballance_cnt <= 0)
 			{	Log(0, "Incorrect ballance-check=%s in config!", p);
 				return 1;
 			}
 			continue;
 		}
-		if (strcasecmp(str, "maxdepth")==0)
+		if (strcasecmp(str, "maxdepth") == 0)
 		{	maxdepth = atoi(p);
-			if (!isdigit(*p) || maxdepth<=0)
+			if (!isdigit(*p) || maxdepth <= 0)
 			{	Log(0, "Incorrect maxdepth=%s in config!", p);
 				return 1;
 			}
 			continue;
 		}
-		if (strcasecmp(str, "mapkey")==0)
+#if NBITS>0
+		if (strcasecmp(str, "mapkey") == 0)
 		{	mapkey = atoi(p);
-			if (!isdigit(*p) || mapkey<=0)
+			if (!isdigit(*p) || mapkey <= 0)
 			{	Log(0, "Incorrect mapkey=%s in config!", p);
 				return 1;
 			}
 			continue;
 		}
-		if (strcasecmp(str, "setclass")==0)
+		if (strcasecmp(str, "setclass") == 0)
 		{	strcpy(str, p);
 			p=strstr(str, "::");
-			if (p==NULL)
-			{	Log(0, "Incorrect setclass=%s ignored!", str);
-				continue;
+			if (p)
+			{	
+				*p = 0;
+				strncpy(perlfile, str, sizeof(perlfile));
+				p += 2;
 			}
-			*p=0;
-			strncpy(perlfile, str, sizeof(perlfile));
-			strncpy(plsetclass, p+2, sizeof(plsetclass));
+			strncpy(plsetclass, p, sizeof(plsetclass));
 			continue;
 		}
-		if (strcasecmp(str, "pidfile")==0)
+#endif
+		if (strcasecmp(str, "perlfile") == 0)
+		{	strncpy(perlfile, p, sizeof(perlfile));
+			continue;
+		}
+		if (strcasecmp(str, "pidfile") == 0)
 		{	strncpy(pidfile, p, sizeof(pidfile));
 			continue;
 		}
@@ -183,19 +204,19 @@ int config(char *confname)
 		Log(6, "Unknown keyword %s in config ignored", str);
         }
 	fclose(f);
-	if (my_as==0)
+	if (my_as == 0)
 	{	Log(0, "my-as not specified!");
 		return 1;
 	}
-	if (remote_as==0)
+	if (remote_as == 0)
 	{	Log(0, "remote-as not specified!");
 		return 1;
 	}
-	if (router_id == (ulong)-1)
+	if (router_id == (uint32_t)-1)
 	{	Log(0, "router-id not specified!");
 		return 1;
 	}
-	if (remote == (ulong)-1)
+	if (remote == INADDR_NONE)
 	{	Log(0, "remote not specified!");
 		return 1;
 	}

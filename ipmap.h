@@ -15,7 +15,7 @@
 
 #define MAPSIZE (NBITS * (1<<(MAXPREFIX-3)))
 
-#if NBITS>8
+#if NBITS > 8
 typedef unsigned short int class_type;
 #else
 typedef char class_type;

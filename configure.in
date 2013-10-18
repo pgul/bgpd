@@ -45,13 +45,13 @@ AC_ARG_WITH(nbits,
 AC_ARG_WITH(minprefix,
      [  --with-maxprefix=LEN    set maximum prefix length (24)],
      [maxprefix=$withval],[])
-[if echo $nbits | grep -q '[^0-9]' || [ $nbits -ne 1 -a $nbits -ne 2 -a $nbits -ne 4 -a $nbits -ne 8 -a $nbits -ne 16 ]]
+[if echo $nbits | grep -q '[^0-9]' || [ $nbits -ne 0 -a $nbits -ne 1 -a $nbits -ne 2 -a $nbits -ne 4 -a $nbits -ne 8 -a $nbits -ne 16 ]]
 then
-	AC_ERROR(Incorrect nbits value $nbits, must be 1..16, power of 2)
+	AC_ERROR(Incorrect nbits value $nbits, must be 1..16, power of 2, or 0)
 fi
 [if echo $maxprefix | grep -q '[^0-9]' || [ $maxprefix -gt 32 -o $maxprefix -lt 16 ]]
 then
-	AC_ERROR(Incorrect nbits value $nbits, must be 1..16, power of 2)
+	AC_ERROR(Incorrect nbits value $nbits, must be 1..16, power of 2, or 0)
 fi
 
 AC_DEFINE_UNQUOTED(NBITS, $nbits)

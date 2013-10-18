@@ -14,9 +14,11 @@
 #include <sys/shm.h>
 #include "ipmap.h"
 
+#if NBITS > 0
 static class_type *map;
 static int shmid;
 unsigned long int mapkey;
+#endif
 
 void Log(int level, char *format, ...)
 {
@@ -38,26 +40,27 @@ void Log(int level, char *format, ...)
 }
 
 
-#if NBITS<8
+#if NBITS >= 8
+static class_type shmgetone(class_type *map, unsigned long addr)
+{
+	unsigned int offs = (unsigned int)(ntohl(addr));
+	offs >>= (32 - MAXPREFIX);
+	return map[offs];
+}
+#elif NBITS > 0
 static class_type shmgetone(class_type *map, unsigned long addr)
 {
 	unsigned char bits, mask;
 	unsigned int offs = (unsigned int)(ntohl(addr));
-	offs >>= (32-MAXPREFIX);
-	bits = (offs%(8/NBITS))*NBITS;
-	mask = (0xff >> (8-NBITS))<<bits;
-	offs /= (8/NBITS);
+	offs >>= (32 - MAXPREFIX);
+	bits = (offs % (8 / NBITS)) * NBITS;
+	mask = (0xff >> (8 - NBITS)) << bits;
+	offs /= (8 / NBITS);
 	return (map[offs] & mask) >> bits;
-}
-#else
-static class_type shmgetone(class_type *map, unsigned long addr)
-{
-	unsigned int offs = (unsigned int)(ntohl(addr));
-	offs >>= (32-MAXPREFIX);
-	return map[offs];
 }
 #endif
 
+#if NBITS > 0
 static void freeshmem(void)
 {
 	struct shmid_ds buf;
@@ -98,14 +101,20 @@ static void init_map(int argc, char *argv[])
 		exit(1);
 	}
 }
+#endif
 
 int main(int argc, char *argv[])
 {
 	unsigned long int addr;
-	mapkey = MAPKEY;
-	if (argc>1 && (addr=inet_addr(argv[1]))!=INADDR_NONE)
-	{	init_map(0, NULL);
+	if (argc > 1 && (addr = inet_addr(argv[1])) != INADDR_NONE)
+	{	
+#if NBITS == 0
+		printf("Unsupported (compiled with --with-nbits=0)\n");
+#else
+		mapkey = MAPKEY;
+		init_map(0, NULL);
 		printf("%s has class %u\n", argv[1], shmgetone(map, addr));
+#endif
 		return 0;
 	}
 	printf("Usage: %s <ip-addr>\n", argv[0]);

@@ -25,7 +25,7 @@ enum statustype {IDLE, CONNECT, ACTIVE, OPENSENT, OPENCONFIRM, ESTABLISHED, NO_S
     status = NO_STATUS;
 char *statusstr[] =
     { "Idle", "Connect", "Active", "OpenSent", "OpenConfirm", "Established", "Unknown" };
-unsigned long mask[33];
+uint32_t mask[33];
 
 static int blockread(int h, void *vbuf, int size)
 {
@@ -103,17 +103,17 @@ static int bgpsession(int sock)
 	int len, r, i;
 	char *p;
 	static char str[128];
-	time_t hold_time, hold_timer, keepalive_sent, rest_time;
-	unsigned long *community;
-	unsigned short *aspath;
+	time_t hold_time, hold_timer, keepalive_sent, rest_time, curtime;
+	uint32_t *community;
+	uint16_t *aspath;
 	int aspath_len, community_len, prefix_len;
-	unsigned long prefix, nexthop;
-	unsigned long localpref, metric;
+	uint32_t prefix, nexthop;
+	uint32_t localpref, metric;
 	char atomic_aggregate, origin, aspath_type;
 	int attr_length, withdraw_length, pathattr_length, nlri_length;
 	char *withdraw_routes, *pathattr, *nlri;
 	char attr_flags, attr_code;
-	int wasupdate=0;
+	int wasupdate = 0;
 
 	memset(&hdr.marker, 0xff, sizeof(hdr.marker));
 	hdr.type = 1; /* OPEN */
@@ -123,7 +123,7 @@ static int bgpsession(int sock)
 	open_hdr->hold_time = htons(holdtime);
 	open_hdr->router_id = router_id;
 	open_hdr->oparam_len = 0;
-	len = sizeof(hdr)-sizeof(hdr.pktdata)+sizeof(*open_hdr);
+	len = sizeof(hdr) - sizeof(hdr.pktdata) + sizeof(*open_hdr);
 	hdr.length = htons(len);
 	if (write(sock, &hdr, len) != len)
 	{	Log(0, "Can't write to socket: %s", strerror(errno));
@@ -131,21 +131,21 @@ static int bgpsession(int sock)
 	}
 	setstatus(OPENSENT);
 	/* waiting for the OPEN message from remote */
-	len = blockread(sock, &hdr, sizeof(hdr)-sizeof(hdr.pktdata)+sizeof(*open_hdr));
-	if (len<(int)(sizeof(hdr)-sizeof(hdr.pktdata)+sizeof(*open_hdr)))
+	len = blockread(sock, &hdr, sizeof(hdr) - sizeof(hdr.pktdata) + sizeof(*open_hdr));
+	if (len < (int)(sizeof(hdr) - sizeof(hdr.pktdata) + sizeof(*open_hdr)))
 	{	Log(0, "Can't read from socket: %s", strerror(errno));
 		return 1;
 	}
 	hdr.length = ntohs(hdr.length);
-	if (hdr.length>len)
-	{	if (blockread(sock, (char *)&hdr+len, hdr.length-len)<hdr.length-len)
+	if (hdr.length > len)
+	{	if (blockread(sock, (char *)&hdr + len, hdr.length-len) < hdr.length-len)
 		{	Log(0, "Can't read from socket: %s", strerror(errno));
 			return 1;
 		}
 	}
 	/* check received OPEN message */
-	for (i=0; i<sizeof(hdr.marker); i++)
-	{	if (hdr.marker[i]!=0xff)
+	for (i = 0; i < sizeof(hdr.marker); i++)
+	{	if (hdr.marker[i] != 0xff)
 		{	send_notify(sock, 1, 1); /* Connection Not Synchronized */
 			Log(0, "Bad marker");
 			return 1;
@@ -177,7 +177,7 @@ static int bgpsession(int sock)
 		Log(0, "Unacceptable hold time %u sec", hold_time);
 		return 1;
 	}
-	if (hold_time==0 || (hold_time>holdtime && holdtime>0))
+	if (hold_time == 0 || (hold_time > holdtime && holdtime > 0))
 		hold_time = holdtime;
 	/* check for open params */
 	if (open_hdr->oparam_len > 0)
@@ -188,32 +188,32 @@ static int bgpsession(int sock)
 		    *(char *)(open_hdr+1));
 		return 1;
 #else
-		op=(struct oparam_struct *)(open_hdr+1);
+		op = (struct oparam_struct *)(open_hdr + 1);
 		len = open_hdr->oparam_len;
-		while (len>0)
+		while (len > 0)
 		{	char str[80];
-			if (op->param_type==2)
+			if (op->param_type == 2)
 			{	/* Capability */
-				cap = (struct capability *)(op+1);
-				if (cap->cap_code==2) /* Route Refresh Capability */
+				cap = (struct capability *)(op + 1);
+				if (cap->cap_code == 2) /* Route Refresh Capability */
 				{	Log(5, "Remote REFRESH capable");
 				} else
-				{	str[0]='\0';
-					for (i=0; i<cap->cap_length && i<(sizeof(str)-1)/2; i++)
-						sprintf(str+i*2, "%02x", ((char *)(cap+1))[i]);
+				{	str[0] = '\0';
+					for (i = 0; i < cap->cap_length && i < (sizeof(str) - 1)/2; i++)
+						sprintf(str + i*2, "%02x", ((char *)(cap + 1))[i]);
 					Log(3, "Unknown capability code 0x%02x len %u '%s'", cap->cap_code, cap->cap_length, str);
 				}
 			} else
-			{	str[0]='\0';
-				for (i=0; i<op->param_length && i<(sizeof(str)-1)/2; i++)
-					sprintf(str+i*2, "%02x", ((char *)(op+1))[i]);
+			{	str[0] = '\0';
+				for (i = 0; i < op->param_length && i < (sizeof(str) - 1)/2; i++)
+					sprintf(str + i*2, "%02x", ((char *)(op + 1))[i]);
 				Log(1, "Unsupported open parameter type %u len %u: %s",
 				    op->param_type, op->param_length, str);
 				send_notify(sock, 2, 4); /* Unsupported Optional Parameter */
 				return 1;
 			}
-			len -= (op->param_length+2);
-			op = (struct oparam_struct *)((char *)op+op->param_length+2);
+			len -= (op->param_length + 2);
+			op = (struct oparam_struct *)((char *)op + op->param_length + 2);
 		}
 #endif
 	}
@@ -234,36 +234,38 @@ static int bgpsession(int sock)
 	hold_timer = time(NULL);
 	while (1)
 	{
+		curtime = time(NULL);
 		FD_ZERO(&fd);
 		FD_SET(sock, &fd);
-		tv.tv_sec = hold_time/3;
-		tv.tv_usec=0;
-		rest_time = time(NULL)-keepalive_sent;
+		tv.tv_sec = hold_time / 3;
+		tv.tv_usec = 0;
+		rest_time = curtime - keepalive_sent;
 		if (hold_time)
 		{	if (rest_time >= hold_time/3)
 				goto send_keepalive;
 			tv.tv_sec = hold_time/3-rest_time;
 		} else
 			tv.tv_sec = 0;
-		rest_time = time(NULL)-hold_timer;
-		if (hold_time && hold_time<=rest_time)
+		rest_time = curtime - hold_timer;
+		if (hold_time && hold_time <= rest_time)
 		{	send_notify(sock, 4, 0); /* Hold timer expired */
 			Log(0, "No messages within hold time %u sec", hold_time);
 			return 1;
 		}
-		if (hold_time && hold_time-rest_time<hold_time/3)
-			tv.tv_sec = hold_time-rest_time;
-		r=select(sock+1, &fd, NULL, NULL, &tv);
-		if (r==0)
+		if (hold_time && hold_time - rest_time < hold_time / 3)
+			tv.tv_sec = hold_time - rest_time;
+		r = select(sock + 1, &fd, NULL, NULL, &tv);
+		curtime = time(NULL);
+		if (r == 0)
 		{	/* send KEEPALIVE */
 send_keepalive:
 #if 1
-			for (i=0; i<sizeof(hdr.marker); i++)
-				if (hdr.marker[i]!=0xff)
+			for (i = 0; i < sizeof(hdr.marker); i++)
+				if (hdr.marker[i] != 0xff)
 				{	send_notify(sock, 1, 1); /* Connection Not Synchronized */
 					Log(0, "Bad my marker");
-					for (i=0; i<len && i<(sizeof(str)-1)/2; i++)
-						sprintf(str+i*2, "%02x", *(((char *)&hdr)+i));
+					for (i = 0; i < len && i < (sizeof(str) - 1) / 2; i++)
+						sprintf(str + i*2, "%02x", *(((char *)&hdr) + i));
 					Log(0, "Packet header: %s", str);
 					//return 1;
 					memset(hdr.marker, 0xff, sizeof(hdr.marker));
@@ -271,7 +273,7 @@ send_keepalive:
 				}
 #endif
 			keepalive_sent = time(NULL);
-			len = sizeof(hdr)-sizeof(hdr.pktdata);
+			len = sizeof(hdr) - sizeof(hdr.pktdata);
 			hdr.type = 4;
 			hdr.length = htons(len);
 			if (write(sock, &hdr, len) != len)
@@ -282,33 +284,33 @@ send_keepalive:
 			keepalive();
 			continue;
 		}
-		if (r==-1)
+		if (r == -1)
 		{	Log(0, "Select error: %s", strerror(errno));
 			return 1;
 		}
 		/* message arrived */
-		len = blockread(sock, &hdr, sizeof(hdr)-sizeof(hdr.pktdata));
-		if (len != sizeof(hdr)-sizeof(hdr.pktdata))
+		len = blockread(sock, &hdr, sizeof(hdr) - sizeof(hdr.pktdata));
+		if (len != sizeof(hdr) - sizeof(hdr.pktdata))
 		{	Log(0, "Can't read from socket: %s", strerror(errno));
 			return 1;
 		}
-		for (i=0; i<sizeof(hdr.marker); i++)
-			if (hdr.marker[i]!=0xff)
+		for (i = 0; i < sizeof(hdr.marker); i++)
+			if (hdr.marker[i] != 0xff)
 			{	send_notify(sock, 1, 1); /* Connection Not Synchronized */
 				Log(0, "Bad marker");
-				for (i=0; i<len && i<(sizeof(str)-1)/2; i++)
-					sprintf(str+i*2, "%02x", *(((char *)&hdr)+i));
+				for (i = 0; i < len && i < (sizeof(str) - 1) / 2; i++)
+					sprintf(str+i*2, "%02x", *(((char *)&hdr) + i));
 				Log(0, "Received packet header: %s", str);
 				//return 1;
 				break;
 			}
 		hdr.length = ntohs(hdr.length);
-		if (hdr.length<len || hdr.length>4096)
+		if (hdr.length < len || hdr.length > 4096)
 		{	send_notify(sock, 1, 2); /* Bad Message Length */
 			Log(0, "Bad message length (%u bytes)", hdr.length);
 			return 1;
 		}
-		if (hdr.length>len)
+		if (hdr.length > len)
 		{	if (blockread(sock, hdr.pktdata, hdr.length-len) != hdr.length-len)
 			{	Log(0, "Can't read from socket: %s", strerror(errno));
 				return 1;
@@ -321,12 +323,12 @@ send_keepalive:
 		}
 		if (hdr.type == 3)
 		{	/* NOTIFY */
-			for (i=0; i<hdr.length-(sizeof(hdr)-sizeof(hdr.pktdata)) && i<(sizeof(str)-1)/2; i++)
+			for (i = 0; i < hdr.length - (sizeof(hdr) - sizeof(hdr.pktdata)) && i < (sizeof(str) - 1) / 2; i++)
 				sprintf(str+i*2, "%02x", hdr.pktdata[i]);
 			Log(0, "Received packet data: %s", str);
 
 			notify = (struct notify *)hdr.pktdata;
-			hdr.pktdata[hdr.length-(sizeof(hdr)-sizeof(hdr.pktdata))] = '\0';
+			hdr.pktdata[hdr.length - (sizeof(hdr) - sizeof(hdr.pktdata))] = '\0';
 			Log(0, "NOTIFICATION message received, error code %u, subcode %u, data \'%s\'", notify->error_code, notify->error_subcode, notify->error_data);
 			return 1;
 		}
@@ -355,66 +357,66 @@ send_keepalive:
 			mapinited=0;
 			wasupdate=1;
 		}
-		withdraw_length = ntohs(*(ushort *)(hdr.pktdata));
+		withdraw_length = ntohs(*(uint16_t *)(hdr.pktdata));
 		withdraw_routes = hdr.pktdata+2;
-		pathattr_length = ntohs(*(ushort *)(withdraw_routes+withdraw_length));
-		pathattr = withdraw_routes+withdraw_length+2;
-		nlri_length = hdr.length-23-withdraw_length-pathattr_length;
-		nlri = pathattr+pathattr_length;
+		pathattr_length = ntohs(*(uint16_t *)(withdraw_routes + withdraw_length));
+		pathattr = withdraw_routes + withdraw_length + 2;
+		nlri_length = hdr.length - 23 - withdraw_length - pathattr_length;
+		nlri = pathattr + pathattr_length;
 		Log(5, "Received UPDATE message");
 //		Log(5, "Received UPDATE message, withdraw_length %u, pathattr_length %u, nlri_length %u", withdraw_length, pathattr_length, nlri_length);
 //for (i=0; i<hdr.length; i++) printf("%02X", ((char *)&hdr)[i]); printf("\n");
-		while (withdraw_length>0)
+		while (withdraw_length > 0)
 		{
-			prefix_len=*withdraw_routes++;
-			prefix=*(ulong *)withdraw_routes;
+			prefix_len = *withdraw_routes++;
+			prefix = *(uint32_t *)withdraw_routes;
 			prefix &= mask[prefix_len];
-			withdraw_routes += (prefix_len+7)/8;
-			withdraw_length -= 1+(prefix_len+7)/8;
+			withdraw_routes += (prefix_len + 7) / 8;
+			withdraw_length -= 1 + (prefix_len + 7) / 8;
 			withdraw(prefix, prefix_len);
 		}
-		origin=-1;
-		aspath=NULL;
-		community=NULL;
-		aspath_len=community_len=0;
-		nexthop=0;
-		metric=localpref=atomic_aggregate=0;
-		p=NULL;
-		while (pathattr_length>0)
+		origin = -1;
+		aspath = NULL;
+		community = NULL;
+		aspath_len = community_len = 0;
+		nexthop = 0;
+		metric = localpref = atomic_aggregate = 0;
+		p = NULL;
+		while (pathattr_length > 0)
 		{
-			if (p) pathattr=p;
+			if (p) pathattr = p;
 			attr_flags = *pathattr++;
 			attr_code  = *pathattr++;
 			if (attr_flags & 0x10) /* extended length */
-			{	attr_length = ntohs(*(ushort *)pathattr);
-				pathattr+=2;
+			{	attr_length = ntohs(*(uint16_t *)pathattr);
+				pathattr += 2;
 				pathattr_length--;
 			} else
 			{	attr_length = *pathattr++;
 			}
-			pathattr_length-=3+attr_length;
-			p=pathattr+attr_length;
+			pathattr_length -= 3 + attr_length;
+			p = pathattr + attr_length;
 			// Log(4, "Attr code %u, flags 0x%02X, length %u", attr_code, attr_flags, attr_length);
 			if (attr_code == 1)
 			{	origin = *pathattr;
 				continue;
 			}
 			if (attr_code == 2)
-			{	aspath_type=*pathattr++;
-				aspath_len=*pathattr++;
-				aspath=(ushort *)pathattr;
+			{	aspath_type = *pathattr++;
+				aspath_len = *pathattr++;
+				aspath = (uint16_t *)pathattr;
 				continue;
 			}
 			if (attr_code == 3)
-			{	nexthop=*(ulong *)pathattr;
+			{	nexthop = *(uint32_t *)pathattr;
 				continue;
 			}
 			if (attr_code == 4)
-			{	metric=ntohl(*(ulong *)pathattr);
+			{	metric = ntohl(*(uint32_t *)pathattr);
 				continue;
 			}
 			if (attr_code == 5)
-			{	localpref=ntohl(*(ulong *)pathattr);
+			{	localpref = ntohl(*(uint32_t *)pathattr);
 				continue;
 			}
 			if (attr_code == 6)
@@ -427,8 +429,8 @@ send_keepalive:
 			}
 			if (attr_code == 8)
 			{
-				community=(ulong *)pathattr;
-				community_len=attr_length/4;
+				community = (uint32_t *)pathattr;
+				community_len = attr_length / 4;
 				continue;
 			}
 			if (attr_code == 10)
@@ -440,30 +442,30 @@ send_keepalive:
 				Log(0, "Unrecognized well-known attribute type %u length %u", attr_code, attr_length);
 				return 1;
 			}
-			for (i=0; i<attr_length && i<(sizeof(str)-1)/2; i++)
-				sprintf(str+i*2, "%02x", *pathattr++);
+			for (i = 0; i < attr_length && i < (sizeof(str) - 1) / 2; i++)
+				sprintf(str + i * 2, "%02x", *pathattr++);
 			Log(3, "Unrecognized optional attribute type %u length %u value %s", attr_code, attr_length, str);
 		}
 		if (nlri_length == 0)
 			continue;
-		if (origin == (char)-1 || aspath==NULL)
+		if (origin == (char)-1 || aspath == NULL)
 		{	send_notify(sock, 4, 3); /* Missing Well-known Attribute */
 			Log(0, "Origin missed in UPDATE packet!");
 			return 1;
 		}
-		if ((unsigned char)origin>2)
+		if ((unsigned char)origin > 2)
 		{	send_notify(sock, 4, 6); /* Invalid ORIGIN Attribute */
 			Log(0, "Invalid ORIGIN Attribute %u", origin);
 			return 1;
 		}
 		/* parse nlri */
-		while (nlri_length>0)
+		while (nlri_length > 0)
 		{
-			prefix_len=*nlri++;
-			prefix=*(ulong *)nlri;
+			prefix_len = *nlri++;
+			prefix=*(uint32_t *)nlri;
 			prefix &= mask[prefix_len];
-			nlri += (prefix_len+7)/8;
-			nlri_length -= 1+(prefix_len+7)/8;
+			nlri += (prefix_len + 7) / 8;
+			nlri_length -= 1 + (prefix_len + 7) / 8;
 			//Log(5, "Process prefix %s/%u, rest nlri_length %u",
 			//    inet_ntoa(*(struct in_addr *)&prefix), prefix_len,
 			//    nlri_length);
@@ -481,20 +483,20 @@ int daemon(int nochdir, int noclose)
 	if (!nochdir) chdir("/");
 	if (!noclose)
 	{
-		i=open("/dev/null", O_RDONLY);
-		if (i!=-1)
-		{	if (i>0) dup2(i, 0);
+		i = open("/dev/null", O_RDONLY);
+		if (i != -1)
+		{	if (i > 0) dup2(i, 0);
 			close(i);
 		}
-		i=open("/dev/null", O_WRONLY);
-		if (i!=-1)
-		{	if (i>1) dup2(i, 1);
-			if (i>2) dup2(i, 2);
+		i = open("/dev/null", O_WRONLY);
+		if (i != -1)
+		{	if (i > 1) dup2(i, 1);
+			if (i > 2) dup2(i, 2);
 			close(i);
 		}
 	}
-	if ((i=fork()) == -1) return -1;
-	if (i>0) exit(0);
+	if ((i = fork()) == -1) return -1;
+	if (i > 0) exit(0);
 	setsid();
 	return 0;
 }
@@ -517,25 +519,25 @@ void rmpid(void)
 int main(int argc, char *argv[])
 {
 	int sockin, sockout, newsock;
-	struct sockaddr_in serv_addr, sin, client_addr;
+	struct sockaddr_in serv_addr, conn_addr, sin, client_addr;
 	socklen_t client_addr_len;
 	fd_set fdr, fdw, fde;
 	struct timeval tv;
-	time_t select_wait, selectstart;
+	time_t select_wait, selectstart, last_out, curtime;
 	int i, r, daemonize;
 	char *confname;
 
-	mask[0]=0;
-	for (i=1; i<=32; i++)
-		mask[i]=htonl(0xfffffffful<<(32-i));
-	confname=CONFNAME;
-	daemonize=0;
-	while ((i=getopt(argc, argv, "dh?")) != -1)
+	mask[0] = 0;
+	for (i = 1; i <= 32; i++)
+		mask[i] = htonl(0xfffffffful << (32 - i));
+	confname = CONFNAME;
+	daemonize = 0;
+	while ((i = getopt(argc, argv, "dh?")) != -1)
 	{
 		switch (i)
 		{
 			case 'd':
-				daemonize=1; break;
+				daemonize = 1; break;
 			case 'h':
 			case '?':
 				usage(); return 1;
@@ -545,14 +547,14 @@ int main(int argc, char *argv[])
 				return 2;
 		}
 	}
-	if (argc>optind)
-	confname=argv[optind];
+	if (argc > optind)
+	confname = argv[optind];
 	if (config(confname))
 		exit(3);
 	if (daemonize) daemon(0, 0);
 	if (pidfile[0])
 	{
-		FILE *f=fopen(pidfile, "w");
+		FILE *f = fopen(pidfile, "w");
 		if (f)
 		{
 			fprintf(f, "%u\n", (unsigned)getpid());
@@ -564,14 +566,22 @@ int main(int argc, char *argv[])
 	setstatus(IDLE);
 	init_map(argc, argv);
 	/* open listening socket */
+	memset(&serv_addr, 0, sizeof(serv_addr));
 	serv_addr.sin_port = bindport;
 	serv_addr.sin_family = AF_INET;
 	serv_addr.sin_addr.s_addr = htonl (INADDR_ANY);
-	sockin=-1;
+	/* client socket */
+	memset(&conn_addr, 0, sizeof(conn_addr));
+	conn_addr.sin_port = bindport;
+	conn_addr.sin_family = AF_INET;
+	conn_addr.sin_addr.s_addr = htonl (INADDR_ANY);
+	sockin = sockout = -1;
+	last_out = 0;
 
 	while (1)
 	{
-		if (sockin==-1)
+		curtime = time(NULL);
+		if (sockin == -1)
 		{	if ((sockin = socket(AF_INET, SOCK_STREAM, 0)) == -1)
 			{	Log (0, "socket: %s", strerror(errno));
 				exit(1);
@@ -582,7 +592,7 @@ int main(int argc, char *argv[])
 			if (bind(sockin, (struct sockaddr *)&serv_addr, sizeof(serv_addr)) != 0)
 			{	Log (0, "bind: %s", strerror(errno));
 				close(sockin);
-				sockin=-1;
+				sockin = -1;
 			} else
 				/* waiting for incoming connection */
 				listen(sockin, 5);
@@ -590,36 +600,54 @@ int main(int argc, char *argv[])
 
 		setstatus(ACTIVE);
 		/* try to connect */
-		setstatus(CONNECT);
-		if ((sockout = socket(AF_INET, SOCK_STREAM, 0)) == -1)
-		{	Log (0, "socket: %s", strerror(errno));
-			exit(1);
-		}
-		sin.sin_addr.s_addr = remote;
-		sin.sin_port = port;
-		sin.sin_family = AF_INET;
-		r = fcntl (sockout, F_GETFL, 0) ;
-		if (r >= 0)
-			r = fcntl (sockout, F_SETFL, r | O_NONBLOCK) ;
-		if (connect(sockout, (struct sockaddr *)&sin, sizeof(sin)))
-		{	
-			if (errno != EINPROGRESS)
-			{	Log(0, "Can't connect: %s", strerror(errno));
+		if (sockout == -1 && time(NULL) - last_out >= reconnect_time)
+		{
+			setstatus(CONNECT);
+			if ((sockout = socket(AF_INET, SOCK_STREAM, 0)) == -1)
+			{	Log (0, "socket: %s", strerror(errno));
+				exit(1);
+			}
+#if 0
+			if (setsockopt(sockout, SOL_SOCKET, SO_REUSEADDR,
+			               (char *) &i, sizeof i) == -1)
+				Log (1, "setsockopt(SO_REUSEADDR): %s", strerror(errno));
+			if (bind(sockout, (struct sockaddr *)&conn_addr, sizeof(conn_addr)) != 0)
+			{	Log (0, "bind: %s", strerror(errno));
 				close(sockout);
 				sockout=-1;
-				setstatus(ACTIVE);
+				exit(1);
+			}
+#endif
+			sin.sin_addr.s_addr = remote;
+			sin.sin_port = port;
+			sin.sin_family = AF_INET;
+			r = fcntl (sockout, F_GETFL, 0) ;
+			if (r >= 0)
+				r = fcntl (sockout, F_SETFL, r | O_NONBLOCK) ;
+			last_out = time(NULL);
+			if (connect(sockout, (struct sockaddr *)&sin, sizeof(sin)))
+			{	
+				if (errno != EINPROGRESS)
+				{	Log(0, "Can't connect: %s", strerror(errno));
+					close(sockout);
+					sockout=-1;
+					setstatus(ACTIVE);
+				}
 			}
 		}
-		select_wait=waittime;
+		select_wait = waittime;
+		if (select_wait + curtime > last_out + reconnect_time && sockout == -1)
+			select_wait = last_out + reconnect_time - curtime;
 repselect:
-		if (sockin==-1 && sockout==-1)
+		if (sockin == -1 && sockout == -1)
 		{	sleep(select_wait);
+			curtime = time(NULL);
 			continue;
 		}
 		FD_ZERO(&fdr);
 		FD_ZERO(&fdw);
 		FD_ZERO(&fde);
-		if (sockin!=-1)
+		if (sockin != -1)
 			FD_SET(sockin, &fdr);
 		if (sockout != -1)
 		{	FD_SET(sockout, &fdw);
@@ -629,28 +657,30 @@ repselect:
 			setstatus(ACTIVE);
 		tv.tv_sec = select_wait;
 		tv.tv_usec = 0;
-		selectstart = time(NULL);
-		r = select(((sockin>sockout) ? sockin : sockout)+1, &fdr, &fdw, &fde, &tv);
-		if (r==-1)
+		selectstart = curtime;
+		r = select(((sockin > sockout) ? sockin : sockout) + 1, &fdr, &fdw, &fde, &tv);
+		curtime = time(NULL);
+		if (r == -1)
 		{	Log(0, "Select: %s", strerror(errno));
 			setstatus(IDLE);
-			sleep(select_wait-(selectstart-time(NULL)));
-		} else if (r==0)
+			sleep(select_wait - (selectstart - curtime));
+		} else if (r == 0)
 		{	Log(5, "Select: timeout");
 			setstatus(IDLE);
 		} else
-		{	if (sockout!=-1 && FD_ISSET(sockout, &fde))
+		{	if (sockout != -1 && FD_ISSET(sockout, &fde))
 			{
 				Log(5, "Select: connect() exception");
 errconnect:
 				close(sockout);
 				sockout=-1;
-				select_wait-=time(NULL)-selectstart;
-				if (r==1 && select_wait>0) goto repselect;
+				select_wait -= curtime - selectstart;
+				if (r == 1 && select_wait > 0) goto repselect;
+				last_out = curtime;
 			}
-			if (sockout!=-1 && FD_ISSET(sockout, &fdw))
-			{	int rr=0;
-			       	socklen_t i=sizeof(r);
+			if (sockout != -1 && FD_ISSET(sockout, &fdw))
+			{	int rr = 0;
+			       	socklen_t i = sizeof(r);
 				if (getsockopt(sockout, SOL_SOCKET, SO_ERROR,
 				               &rr, &i))
 				{	Log(0, "getsockopt: %s", strerror(errno));
@@ -662,20 +692,20 @@ errconnect:
 				}
 				/* connected */
 				setstatus(CONNECT);
-				rr = fcntl (sockout, F_GETFL, 0) ;
+				rr = fcntl(sockout, F_GETFL, 0) ;
 				if (rr >= 0)
-					rr = fcntl (sockout, F_SETFL, rr & ~O_NONBLOCK) ;
-				if (sockin!=-1) close(sockin);
-				sockin=-1;
+					rr = fcntl(sockout, F_SETFL, rr & ~O_NONBLOCK) ;
+				if (sockin != -1) close(sockin);
+				sockin = -1;
 				Log(4, "Outgoing bgp session");
 				bgpsession(sockout);
 				reset_table();
 			}
-			if (sockin!=-1 && FD_ISSET(sockin, &fdr))
+			if (sockin != -1 && FD_ISSET(sockin, &fdr))
 			{	/* incoming connection */
 				setstatus(CONNECT);
-				if (sockout!=-1) close(sockout);
-				sockout=-1;
+				if (sockout != -1) close(sockout);
+				sockout = -1;
 				newsock = accept(sockin, (struct sockaddr *)&client_addr, &client_addr_len);
 				if (newsock == -1)
 				{	Log(0, "Accept: %s", strerror(errno));
@@ -687,7 +717,7 @@ errconnect:
 					} else
 					{	if (sockout) close(sockout);
 						if (sockin) close(sockin);
-						sockout=sockin=-1;
+						sockout = sockin = -1;
 						Log(4, "Incoming bgp session");
 						bgpsession(newsock);
 						close(newsock);
@@ -696,9 +726,10 @@ errconnect:
 				}
 			}
 		}
-		if (sockout!=-1)
+		if (sockout != -1)
 		{	close(sockout);
-			sockout=-1;
+			sockout = -1;
+			last_out = curtime;
 		}
 		setstatus(IDLE);
 	}

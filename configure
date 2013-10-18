@@ -933,7 +933,7 @@ if test "${with_minprefix+set}" = set; then
   maxprefix=$withval
 fi
 
-if echo $nbits | grep -q '[^0-9]' || [ $nbits -ne 1 -a $nbits -ne 2 -a $nbits -ne 4 -a $nbits -ne 8 -a $nbits -ne 16 ]
+if echo $nbits | grep -q '[^0-9]' || [ $nbits -ne 0 -a $nbits -ne 1 -a $nbits -ne 2 -a $nbits -ne 4 -a $nbits -ne 8 -a $nbits -ne 16 ]
 then
 	{ echo "configure: error: Incorrect nbits value $nbits" 1>&2; exit 1; }
 fi

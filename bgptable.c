@@ -31,7 +31,7 @@
 #endif
 
 struct route_obj {
-	ulong ip;
+	uint32_t ip;
 	char prefix_len;
 	class_type class;
 	struct route_obj *left, *right, *parent;
@@ -39,20 +39,26 @@ struct route_obj {
 
 static struct route_obj *route_root = NULL;
 class_type *map;
-static int last_ballanced=0;
+static int last_ballanced = 0;
 int prefix_cnt;
 int mapinited;
 
 static PerlInterpreter *perl = NULL;
 
 static struct route_obj *findroute(struct route_obj *new, int addnew, int *added);
-static void mapsetclass(ulong from, ulong to, class_type class);
+#if NBITS > 0
+static void mapsetclass(uint32_t from, uint32_t to, class_type class);
 static int  chclass(struct route_obj *obj);
-static int  perlupdate(ulong prefix, int prefix_len,
-           int community_len, ulong *community, int aspath_len, ushort *aspath);
+#endif
+static int  perlfilter(uint32_t prefix, int prefix_len,
+           int community_len, uint32_t *community, int aspath_len, uint16_t *aspath);
+static int  perlupdate(uint32_t prefix, int prefix_len,
+           int community_len, uint32_t *community, int aspath_len, uint16_t *aspath, int added);
+static int  perlwithdraw(uint32_t prefix, int prefix_len);
 
 void boot_DynaLoader(pTHX_ CV *cv);
 
+#if NBITS > 0
 static XS(perl_initclass)
 {
   dXSARGS;
@@ -66,17 +72,17 @@ static XS(perl_initclass)
   { Log(0, "Wrong params number to setclass (need 2, exist %d)", items);
     XSRETURN_EMPTY;
   }
-  ip    = (char *)SvPV(ST(0), n_a); if (n_a == 0) ip    = "";
+  ip = (char *)SvPV(ST(0), n_a); if (n_a == 0) ip = "";
   ip = strdup(ip);
   class = SvIV(ST(1));
   p=strchr(ip, '/');
   if (p)
-  { *p++='\0';
-    preflen=atoi(p);
+  { *p++ = '\0';
+    preflen = atoi(p);
   }
   r.class = (class_type)class;
   r.ip = ntohl(inet_addr(ip));
-  r.prefix_len = (ushort)preflen;
+  r.prefix_len = (char)preflen;
   r.left = r.right = r.parent = NULL;
   pr = findroute(&r, 1, &added);
   if (!pr)
@@ -93,13 +99,16 @@ static XS(perl_initclass)
 
   XSRETURN_EMPTY;
 }
+#endif
 
 static void xs_init(pTHX)
 {
   static char *file = __FILE__;
   dXSUB_SYS;
   newXS("DynaLoader::boot_DynaLoader", boot_DynaLoader, file);
+#if NBITS > 0
   newXS("initclass",  perl_initclass,  file);
+#endif
 }
 
 static void exitperl(void)
@@ -180,6 +189,29 @@ void perlbgpup(void)
      Log(2, "Perl %s() success", plbgpup);
 }
 
+void perlbgpdown(void)
+{
+   STRLEN n_a;
+
+   dSP;
+   ENTER;
+   SAVETMPS;
+   PUSHMARK(SP);
+   PUTBACK;
+   perl_call_pv(plbgpdown, G_EVAL|G_SCALAR);
+   SPAGAIN;
+   PUTBACK;
+   FREETMPS;
+   LEAVE;
+   if (SvTRUE(ERRSV))
+   {
+     Log(0, "Perl %s() eval error: %s", plbgpdown, SvPV(ERRSV, n_a));
+     exit(4);
+   } else
+     Log(2, "Perl %s() success", plbgpdown);
+}
+
+#if NBITS > 0
 static class_type perlsetclass(char *community, char *aspath, char *prefix)
 {
    char *prc;
@@ -228,18 +260,19 @@ static class_type perlsetclass(char *community, char *aspath, char *prefix)
    }
    return class;
 }
+#endif
 
-static void communitystr(int comm_len, ulong *community, char *scomm, int len)
+static void communitystr(int comm_len, uint32_t *community, char *scomm, int len)
 {
 	char *p;
-	ushort firstas, secondas;
+	uint16_t firstas, secondas;
 	int i;
 
 	p = scomm;
-	for (i=0; i<comm_len; i++)
-	{	if (*scomm) *p++=' ';
-		firstas=ntohs(*(ushort *)(community+i));
-		secondas=ntohs(((ushort *)(community+i))[1]);
+	for (i = 0; i < comm_len; i++)
+	{	if (*scomm) *p++ = ' ';
+		firstas = ntohs(*(uint16_t *)(community + i));
+		secondas = ntohs(((uint16_t *)(community + i))[1]);
 		if (firstas == 0xffff && secondas == 0xff01)
 			strcpy(p, "no-export");
 		else if (firstas == 0xffff && secondas == 0xff02)
@@ -248,31 +281,32 @@ static void communitystr(int comm_len, ulong *community, char *scomm, int len)
 			strcpy(p, "no-export-subconfed");
 		else
 			sprintf(p, "%u:%u", firstas, secondas);
-		p+=strlen(p);
-		if (p-scomm+20>len)
+		p += strlen(p);
+		if (p - scomm + 20 > len)
 			break;
 	}
 }
 
-static void aspathstr(int aspath_len, ushort *aspath, char *saspath, int len)
+static void aspathstr(int aspath_len, uint16_t *aspath, char *saspath, int len)
 {
 	char *p;
 	int i;
 
 	saspath[0] = '\0';
 	p = saspath;
-	for (i=0; i<aspath_len; i++)
-	{	if (*saspath) *p++=' ';
+	for (i = 0; i < aspath_len; i++)
+	{	if (*saspath) *p++ = ' ';
 		sprintf(p, "%u", ntohs(aspath[i]));
-		p+=strlen(p);
-		if (p-saspath+15>len)
+		p += strlen(p);
+		if (p - saspath + 15 > len)
 			break;
 	}
 }
 
-static class_type setclass(ulong *community, int community_len,
-                           ushort *aspath, int aspath_len,
-                           ulong prefix, ushort prefix_len)
+#if NBITS > 0
+static class_type setclass(uint32_t *community, int community_len,
+                           uint16_t *aspath, int aspath_len,
+                           uint32_t prefix, int prefix_len)
 {
 	char saspath[256], scommunity[256], sprefix[32];
 
@@ -281,13 +315,14 @@ static class_type setclass(ulong *community, int community_len,
 	snprintf(sprefix, sizeof(sprefix), "%s/%u", inet_ntoa(*((struct in_addr *)&prefix)), prefix_len);
 	return perlsetclass(scommunity, saspath, sprefix);
 }
+#endif
 
 static int compare(struct route_obj *a, struct route_obj *b)
 {
-	if (a->ip>b->ip) return 1;
-	if (a->ip<b->ip) return -1;
-	if (a->prefix_len>b->prefix_len) return 1;
-	if (a->prefix_len<b->prefix_len) return -1;
+	if (a->ip > b->ip) return 1;
+	if (a->ip < b->ip) return -1;
+	if (a->prefix_len > b->prefix_len) return 1;
+	if (a->prefix_len < b->prefix_len) return -1;
 	return 0;
 }
 
@@ -305,7 +340,7 @@ static struct route_obj *nextroute(struct route_obj *cur)
 		}
 		return NULL;
 	}
-	for (cur=cur->right; cur->left; cur=cur->left);
+	for (cur = cur->right; cur->left; cur = cur->left);
 	return cur;
 }
 
@@ -422,8 +457,8 @@ static struct route_obj *ballance(struct route_obj *r)
 			route_root = p;
 		r->parent = NULL;
 		/* add r to the tree */
-		pp=findroute(r, 2, &i);
-		if (pp==NULL || i==0 || pp!=r)
+		pp = findroute(r, 2, &i);
+		if (pp == NULL || i == 0 || pp != r)
 		{	Log(0, "Internal error!");
 			exit(2);
 		}
@@ -439,9 +474,9 @@ static void ballance_tree(void)
 
 	last_ballanced = 0;
 	r = route_root;
-	if (r==NULL) return;
+	if (r == NULL) return;
 	depth = routedepth(route_root);
-	if (depth<maxdepth)
+	if (depth < maxdepth)
 	{	Log(6, "Binary tree ballancing not needed (depth %u)", depth);
 		return;
 	}
@@ -461,8 +496,8 @@ static void ballance_tree(void)
 			if (p == NULL)
 			{	depth = routedepth(route_root);
 				Log(5, "Ballancing done, depth %u", depth);
-				if (depth>maxdepth)
-				{	maxdepth = depth+1;
+				if (depth > maxdepth)
+				{	maxdepth = depth + 1;
 					Log(1, "maxdepth too small, changed to %u", maxdepth);
 				}
 				return;
@@ -481,19 +516,19 @@ static struct route_obj *findroute(struct route_obj *new, int addnew, int *added
 {
 	struct route_obj *cur, *p, **newcur;
 	int i;
-	if (added) *added=0;
-	for (cur=route_root; ; cur = *newcur)
+	if (added) *added = 0;
+	for (cur = route_root; ; cur = *newcur)
 	{	if (cur == NULL)
 		{	newcur = &route_root;
 		} else
-		{	i=compare(new, cur);
-			if (i==0) return cur;
-			if (i>0) newcur=&cur->right;
-			else newcur=&cur->left;
+		{	i = compare(new, cur);
+			if (i == 0) return cur;
+			if (i > 0) newcur = &cur->right;
+			else newcur = &cur->left;
 		}
-		if (*newcur==NULL)
-		{	if (addnew==0) return NULL;
-			if (addnew==-1) /* find nearest bigger */
+		if (*newcur == NULL)
+		{	if (addnew == 0) return NULL;
+			if (addnew == -1) /* find nearest bigger */
 			{	if (newcur == &cur->right)
 					return nextroute(cur);
 				else
@@ -501,7 +536,7 @@ static struct route_obj *findroute(struct route_obj *new, int addnew, int *added
 			}
 			if (addnew==1)
 			{	p = malloc(sizeof(*cur));
-				if (p==NULL)
+				if (p == NULL)
 				{	Log(0, "Memory allocation fail!");
 					exit(1);
 				}
@@ -557,10 +592,11 @@ static void delroute(struct route_obj *route)
 	prefix_cnt--;
 }
 
-#if NBITS<=8
+#if NBITS > 0
+#if NBITS <= 8
 static void shmemset(class_type *map, int offs, char class, unsigned int size)
 {
-	memset(&map[offs], class, size*sizeof(class_type));
+	memset(&map[offs], class, size * sizeof(class_type));
 }
 
 static class_type shmgetone(class_type *map, unsigned int offs)
@@ -574,22 +610,22 @@ static void shmputone(class_type *map, unsigned int offs, class_type class)
 	map[offs] = class;
 }
 
-static void mapsetclass(ulong from, ulong to, class_type class)
+static void mapsetclass(uint32_t from, uint32_t to, class_type class)
 {
 #if MAXPREFIX < 32
-	from>>=(32-MAXPREFIX);
-	if (to+1 == 0)
-		to=0x80000000ul>>(31-MAXPREFIX);
+	from >>= (32 - MAXPREFIX);
+	if (to + 1 == 0)
+		to = 0x80000000ul >> (31 - MAXPREFIX);
 	else
-		to=(to+1)>>(32-MAXPREFIX);
-	if (from==to)
+		to = (to + 1) >> (32 - MAXPREFIX);
+	if (from == to)
 		return;
 #else // MAXPREFIX == 32
 	to++;
 #endif // MAXPREFIX == 32
 #if NBITS == 16
 	{	int i;
-		i=from;
+		i = from;
 		do
 		{	shmputone(map, i, class);
 		} while (++i != to);
@@ -605,16 +641,16 @@ static void mapsetclass(ulong from, ulong to, class_type class)
 #else // NBITS < 8
 	{	ulong firstbyte, lastbyte;
 		char mask1, mask2;
-		firstbyte = from/(8/NBITS);
-		lastbyte = (to-1)/(8/NBITS);
-		mask1 = (0xff<<((from-firstbyte*(8/NBITS))*NBITS)) & 0xff;
-		mask2 = 0xff>>(8-((to-lastbyte*(8/NBITS)))*NBITS);
+		firstbyte = from / (8 / NBITS);
+		lastbyte = (to - 1) / (8 / NBITS);
+		mask1 = (0xff << ((from - firstbyte * (8 / NBITS)) * NBITS)) & 0xff;
+		mask2 = 0xff >> (8 - ((to - lastbyte * (8 / NBITS))) * NBITS);
 #if NBITS == 1
 		class = (class ? 0xff : 0);
 #elif NBITS == 2
-		class |= (class<<2) | (class<<4) | (class<<6);
+		class |= (class << 2) | (class << 4) | (class << 6);
 #else // NBITS == 4
-		class |= class<<4;
+		class |= class << 4;
 #endif
 		if (firstbyte == lastbyte)
 		{	mask1 &= mask2;
@@ -634,7 +670,7 @@ static void mapsetclass(ulong from, ulong to, class_type class)
 			// map[lastbyte] = (map[lastbyte] & ~mask2) | (class & mask2);
 			lastbyte--;
 		}
-		if (firstbyte<=lastbyte)
+		if (firstbyte <= lastbyte)
 			shmemset(map, firstbyte, class, lastbyte-firstbyte+1);
 	}
 #endif // NBITS
@@ -643,47 +679,53 @@ static void mapsetclass(ulong from, ulong to, class_type class)
 static int chclass(struct route_obj *obj)
 {
 	struct route_obj route, *r;
-	ulong last_ip;
+	uint32_t last_ip;
 
 	memcpy(&route, obj, sizeof(route));
-	last_ip = route.ip+(0xfffffffful>>(int)route.prefix_len);
+	last_ip = route.ip + (0xfffffffful >> (int)route.prefix_len);
 	r = obj;
 	for (;;)
 	{	r = nextroute(r);
-		if (r==NULL || r->ip>last_ip)
+		if (r == NULL || r->ip > last_ip)
 		{	mapsetclass(route.ip, last_ip, route.class);
 			return 0;
 		}
 		if (r->ip < route.ip) continue;
 		if (route.ip != r->ip)
-			mapsetclass(route.ip, r->ip-1, route.class);
-		route.ip = r->ip+(0xfffffffful>>(int)r->prefix_len)+1;
-		if (route.ip==0 || route.ip>last_ip) return 0;
+			mapsetclass(route.ip, r->ip - 1, route.class);
+		route.ip = r->ip + (0xfffffffful >> (int)r->prefix_len) + 1;
+		if (route.ip == 0 || route.ip > last_ip) return 0;
 	}
 }
+#endif
 
-void withdraw(ulong prefix, int prefix_len)
+void withdraw(uint32_t prefix, int prefix_len)
 {
-	struct route_obj r, parent, *p, *pp;
+	struct route_obj r, *p;
+#if NBITS > 0
+	struct route_obj parent, *pp;
+#endif
 
-	if (perlupdate(prefix, prefix_len, 0, NULL, 0, NULL) == 0)
+	if (perlfilter(prefix, prefix_len, 0, NULL, 0, NULL) == 0)
 	{
 		Log(2, "Filtered withdraw route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
 		return;
 	}
-	r.ip=ntohl(prefix); r.prefix_len=prefix_len;
-	p=findroute(&r, 0, NULL);
-	if (p==NULL)
+	r.ip = ntohl(prefix); r.prefix_len = (char)prefix_len;
+	p = findroute(&r, 0, NULL);
+	if (p == NULL)
 	{	Log(0, "Can't withdraw unexistant route %s/%u",
 		    inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
 		return;
 	}
+	perlwithdraw(prefix, prefix_len);
+#if NBITS > 0
 	/* find parent route */
-	parent.ip=ntohl(prefix); parent.prefix_len=(ushort)prefix_len;
+	parent.ip = ntohl(prefix); parent.prefix_len = (char)prefix_len;
 	parent.class = 0;
 	while (parent.prefix_len)
 	{	parent.prefix_len--;
-		parent.ip &= 0xfffffffful<<(32-(int)parent.prefix_len);
+		parent.ip &= 0xfffffffful << (32 - (int)parent.prefix_len);
 		if ((pp = findroute(&parent, 0, NULL)) != NULL)
 		{	parent.class = pp->class;
 			break;
@@ -694,31 +736,40 @@ void withdraw(ulong prefix, int prefix_len)
 	{	p->class = parent.class;
 		chclass(p);
 	}
+#endif
 	Log(2, "Withdraw route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
 	/* remove route */
 	delroute(p);
 }
 
-void update(ulong prefix, int prefix_len, int community_len, ulong *community,
-            int aspath_len, ushort *aspath)
+void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *community,
+            int aspath_len, uint16_t *aspath)
 {
 	struct route_obj r, *p;
 	int added;
 
-	if (perlupdate(prefix, prefix_len, community_len, community, aspath_len, aspath) == 0)
+	if (perlfilter(prefix, prefix_len, community_len, community, aspath_len, aspath) == 0)
 	{
 		Log(2, "Filtered route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
 		return;
 	}
+#if NBITS > 0
 	r.class = setclass(community, community_len, aspath, aspath_len, prefix, prefix_len);
+#endif
 	r.ip = ntohl(prefix);
-	r.prefix_len = (ushort)prefix_len;
+	r.prefix_len = (char)prefix_len;
 	r.left = r.right = r.parent = NULL;
 	p = findroute(&r, 1, &added);
 	if (!p)
 	{	Log(0, "Internal error!");
 		exit(2);
 	}
+	perlupdate(prefix, prefix_len, community_len, community, aspath_len, aspath, added);
+#if NBITS == 0
+	Log(2, "Updated %sroute %s/%u",
+	    (added ? "" : "existing "),
+	    inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+#else
 	Log(2, "Updated %sroute %s/%u, class %u",
 	    (added ? "" : "existing "),
 	    inet_ntoa(*(struct in_addr *)&prefix), prefix_len, r.class);
@@ -726,22 +777,23 @@ void update(ulong prefix, int prefix_len, int community_len, ulong *community,
 		return;
 	if (!added) p->class = r.class;
 	chclass(p);
+#endif
 }
 
 void reset_table(void)
 {
 	struct route_obj *cur = route_root, *p;
 
-	if (route_root==NULL) return;
+	if (route_root == NULL) return;
 	while (cur)
 	{	if (cur->left)
-			cur=cur->left;
+			cur = cur->left;
 		else if (cur->right)
-			cur=cur->right;
+			cur = cur->right;
 		else
-		{	p=cur->parent;
+		{	p = cur->parent;
 			free(cur);
-			if (p==NULL) break;
+			if (p == NULL) break;
 			if (p->left == cur)
 				p->left=NULL;
 			else
@@ -750,18 +802,21 @@ void reset_table(void)
 		}
 	}
 	route_root = NULL;
+	perlbgpdown();
 	Log(2, "BGP table cleared");
 }
 
 void do_initmap(void)
 {
 	if (mapinited) return;
+#if NBITS > 0
 	mapsetclass(0, 0xfffffffful, 0);
+#endif
 	last_ballanced = 0;
 	prefix_cnt = 0;
 	exitperl();
 	PerlStart();
-	if (perl==NULL)
+	if (perl == NULL)
 		exit(4);
 	Log(2, "Perl loaded");
 	perlinitmap();
@@ -773,6 +828,7 @@ void keepalive(void)
 	Log(5, "KeepAlive, total %u prefixes", prefix_cnt);
 }
 
+#if NBITS > 0
 static int shmid;
 
 static void freeshmem(void)
@@ -787,6 +843,7 @@ static void freeshmem(void)
 			if (buf.shm_nattch == 0)
 				shmctl(shmid, IPC_RMID, &buf);
 }
+#endif
 
 static void sighnd(int signo)
 {
@@ -796,18 +853,21 @@ static void sighnd(int signo)
 
 void init_map(int argc, char *argv[])
 {
+#if NBITS > 0
 	key_t k;
-	int created=0;
+	int created = 0;
 
-	if (argc>1 && isdigit(argv[1][0]))
+	if (argc > 1 && isdigit(argv[1][0]))
 		k = atol(argv[1]);
 	else
 		k = mapkey;
 	map = NULL;
 	shmid = -1;
+#endif
 	signal(SIGINT, sighnd);
 	signal(SIGTERM, sighnd);
 	signal(SIGQUIT, sighnd);
+#if NBITS > 0
 	atexit(freeshmem);
 shmagain:
 	shmid = shmget(k, MAPSIZE, 0600);
@@ -835,10 +895,11 @@ shmagain:
 	{	Log(0, "Can't attach shared memory: %s!", strerror(errno));
 		exit(1);
 	} else if (created)
+#endif
 		do_initmap();
 }
 
-static int perlupdate(ulong prefix, int prefix_len, int community_len, ulong *community, int aspath_len, ushort *aspath)
+static int perlfilter(uint32_t prefix, int prefix_len, int community_len, uint32_t *community, int aspath_len, uint16_t *aspath)
 {
    char *prc;
    char sprefix[32], scommunity[256], saspath[256];
@@ -847,7 +908,7 @@ static int perlupdate(ulong prefix, int prefix_len, int community_len, ulong *co
    int rc;
 
    dSP;
-   if (plupdate[0]=='\0') return 1;
+   if (plfilter[0] == '\0') return 1;
    svcommunity = perl_get_sv("community", TRUE);
    svaspath    = perl_get_sv("aspath", TRUE);
    svprefix    = perl_get_sv("prefix", TRUE);
@@ -861,9 +922,66 @@ static int perlupdate(ulong prefix, int prefix_len, int community_len, ulong *co
    SAVETMPS;
    PUSHMARK(SP);
    PUTBACK;
+   perl_call_pv(plfilter, G_EVAL|G_SCALAR);
+   SPAGAIN;
+   svret = POPs;
+   if (SvTRUE(svret))
+     prc = strdup(SvPV(svret, n_a));
+   else
+     prc = NULL;
+   PUTBACK;
+   FREETMPS;
+   LEAVE;
+   if (SvTRUE(ERRSV))
+   {
+     Log(0, "Perl %s() eval error: %s", plfilter, SvPV(ERRSV, n_a));
+     plfilter[0] = '\0';
+     prc = NULL;
+   }
+   if (n_a == 0 && prc)
+   {
+     free(prc);
+     prc = NULL;
+   }
+   if (prc)
+   { 
+     rc = atoi(prc);
+     free(prc);
+   } else
+   {
+     rc = 1;
+   }
+   return rc;
+}
+
+static int perlupdate(uint32_t prefix, int prefix_len, int community_len, uint32_t *community, int aspath_len, uint16_t *aspath, int added)
+{
+   char *prc;
+   char sprefix[32], scommunity[256], saspath[256];
+   SV *svcommunity, *svaspath, *svprefix, *svnew, *svret;
+   STRLEN n_a;
+   int rc;
+
+   dSP;
+   if (plupdate[0] == '\0') return 1;
+   svcommunity = perl_get_sv("community", TRUE);
+   svaspath    = perl_get_sv("aspath", TRUE);
+   svprefix    = perl_get_sv("prefix", TRUE);
+   svnew       = perl_get_sv("new", TRUE);
+   sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+   aspathstr(aspath_len, aspath, saspath, sizeof(saspath));
+   communitystr(community_len, community, scommunity, sizeof(scommunity));
+   sv_setpv(svcommunity, scommunity);
+   sv_setpv(svaspath, saspath);
+   sv_setpv(svprefix, sprefix);
+   sv_setpv(svnew, added ? "1" : "");
+   ENTER;
+   SAVETMPS;
+   PUSHMARK(SP);
+   PUTBACK;
    perl_call_pv(plupdate, G_EVAL|G_SCALAR);
    SPAGAIN;
-   svret=POPs;
+   svret = POPs;
    if (SvTRUE(svret))
      prc = strdup(SvPV(svret, n_a));
    else
@@ -875,6 +993,55 @@ static int perlupdate(ulong prefix, int prefix_len, int community_len, ulong *co
    {
      Log(0, "Perl %s() eval error: %s", plupdate, SvPV(ERRSV, n_a));
      plupdate[0] = '\0';
+     prc = NULL;
+   }
+   if (n_a == 0 && prc)
+   {
+     free(prc);
+     prc = NULL;
+   }
+   if (prc)
+   { 
+     rc = atoi(prc);
+     free(prc);
+   } else
+   {
+     rc = 1;
+   }
+   return rc;
+}
+
+static int perlwithdraw(uint32_t prefix, int prefix_len)
+{
+   char *prc;
+   char sprefix[32];
+   SV *svprefix, *svret;
+   STRLEN n_a;
+   int rc;
+
+   dSP;
+   if (plwithdraw[0] == '\0') return 1;
+   svprefix    = perl_get_sv("prefix", TRUE);
+   sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+   sv_setpv(svprefix, sprefix);
+   ENTER;
+   SAVETMPS;
+   PUSHMARK(SP);
+   PUTBACK;
+   perl_call_pv(plwithdraw, G_EVAL|G_SCALAR);
+   SPAGAIN;
+   svret = POPs;
+   if (SvTRUE(svret))
+     prc = strdup(SvPV(svret, n_a));
+   else
+     prc = NULL;
+   PUTBACK;
+   FREETMPS;
+   LEAVE;
+   if (SvTRUE(ERRSV))
+   {
+     Log(0, "Perl %s() eval error: %s", plwithdraw, SvPV(ERRSV, n_a));
+     plwithdraw[0] = '\0';
      prc = NULL;
    }
    if (n_a == 0 && prc)
