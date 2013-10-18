@@ -26,18 +26,19 @@ enum statustype {IDLE, CONNECT, ACTIVE, OPENSENT, OPENCONFIRM, ESTABLISHED, NO_S
 char *statusstr[] =
     { "Idle", "Connect", "Active", "OpenSent", "OpenConfirm", "Established", "Unknown" };
 uint32_t mask[33];
+static int terminated = 0;
 
 static int blockread(int h, void *vbuf, int size)
 {
 	int res, len=0;
 	char *buf = (char *)vbuf;
-	while (size>0)
+	while (size > 0)
 	{	res = read(h, buf, size);
-		if (res<0)
+		if (res < 0)
 		{	Log(3, "read socket: %s", strerror(errno));
 			return res;
 		}
-		if (res==0)
+		if (res == 0)
 		{
 			Log(3, "read socket: EOF");
 #if 1
@@ -49,6 +50,7 @@ static int blockread(int h, void *vbuf, int size)
 		len += res;
 		size -= res;
 		buf += res;
+		if (terminated) exit(3);
 	}
 	return len;
 }
@@ -105,7 +107,7 @@ static int bgpsession(int sock)
 	static char str[128];
 	time_t hold_time, hold_timer, keepalive_sent, rest_time, curtime;
 	uint32_t *community;
-	uint16_t *aspath;
+	uint32_t *aspath;
 	int aspath_len, community_len, prefix_len;
 	uint32_t prefix, nexthop;
 	uint32_t localpref, metric;
@@ -114,16 +116,24 @@ static int bgpsession(int sock)
 	char *withdraw_routes, *pathattr, *nlri;
 	char attr_flags, attr_code;
 	int wasupdate = 0;
+	int as32_support = 0;
 
 	memset(&hdr.marker, 0xff, sizeof(hdr.marker));
 	hdr.type = 1; /* OPEN */
 	open_hdr = (struct open_hdr *)hdr.pktdata;
 	open_hdr->version = 4;
-	open_hdr->my_as = htons(my_as);
+	open_hdr->my_as = htons(my_as < 65536 ? my_as : 23456);
 	open_hdr->hold_time = htons(holdtime);
 	open_hdr->router_id = router_id;
-	open_hdr->oparam_len = 0;
-	len = sizeof(hdr) - sizeof(hdr.pktdata) + sizeof(*open_hdr);
+	op = (struct oparam_struct *)(open_hdr + 1);
+	op->param_type = 2; /* Capability */
+	cap = (struct capability *)(op + 1);
+	cap->cap_code = 65;
+	cap->cap_length = 4;
+	*(uint32_t *)(cap + 1) = htonl(my_as);
+	op->param_length = sizeof(*cap) + cap->cap_length;
+	open_hdr->oparam_len = sizeof(*op) + op->param_length;
+	len = sizeof(hdr) - sizeof(hdr.pktdata) + sizeof(*open_hdr) + open_hdr->oparam_len;
 	hdr.length = htons(len);
 	if (write(sock, &hdr, len) != len)
 	{	Log(0, "Can't write to socket: %s", strerror(errno));
@@ -138,7 +148,7 @@ static int bgpsession(int sock)
 	}
 	hdr.length = ntohs(hdr.length);
 	if (hdr.length > len)
-	{	if (blockread(sock, (char *)&hdr + len, hdr.length-len) < hdr.length-len)
+	{	if (blockread(sock, (char *)&hdr + len, hdr.length - len) < hdr.length - len)
 		{	Log(0, "Can't read from socket: %s", strerror(errno));
 			return 1;
 		}
@@ -166,13 +176,13 @@ static int bgpsession(int sock)
 		Log(0, "Unsupported version %d", open_hdr->version);
 		return 1;
 	}
-	if (ntohs(open_hdr->my_as) != remote_as)
+	if (ntohs(open_hdr->my_as) != (remote_as < 65536 ? remote_as : 23456))
 	{	send_notify(sock, 2, 2); /* Bad peer AS */
-		Log(0, "Remote as %u, not %u!", ntohs(open_hdr->my_as), remote_as);
+		Log(0, "Remote AS %u, not %u!", ntohs(open_hdr->my_as), remote_as);
 		return 1;
 	}
 	hold_time = ntohs(open_hdr->hold_time);
-	if (hold_time>0 && hold_time<3)
+	if (hold_time > 0 && hold_time < 3)
 	{	send_notify(sock, 2, 6); /* Unacceptable hold time */
 		Log(0, "Unacceptable hold time %u sec", hold_time);
 		return 1;
@@ -195,12 +205,29 @@ static int bgpsession(int sock)
 			if (op->param_type == 2)
 			{	/* Capability */
 				cap = (struct capability *)(op + 1);
-				if (cap->cap_code == 2) /* Route Refresh Capability */
-				{	Log(5, "Remote REFRESH capable");
+				if (cap->cap_code == 1)
+				{	Log(5, "Remote support some Multiprotocol extensions");
+				} else if (cap->cap_code == 2) /* Route Refresh Capability */
+				{	Log(5, "Remote support route refresh");
+				} else if (cap->cap_code == 64)
+				{	Log(5, "Remote support graceful restart");
+				} else if (cap->cap_code == 65)
+				{	Log(5, "Remote support 4-byte AS numbers");
+					if (cap->cap_length != 4) {
+						Log(1, "Bad AS4 support capability length %u, expected 4", cap->cap_length);
+						send_notify(sock, 2, 4);
+						return 1;
+					}
+					if (ntohl(*(uint32_t *)(cap + 1)) != remote_as)
+					{	Log(0, "Remote as %u, not %u!", ntohl(*(uint32_t *)(cap + 1)), remote_as);
+						send_notify(sock, 2, 2); /* Bad peer AS */
+						return 1;
+					}
+					as32_support = 1;
 				} else
 				{	str[0] = '\0';
-					for (i = 0; i < cap->cap_length && i < (sizeof(str) - 1)/2; i++)
-						sprintf(str + i*2, "%02x", ((char *)(cap + 1))[i]);
+					for (i = 0; i < cap->cap_length && i < (sizeof(str) - 1) / 2; i++)
+						sprintf(str + i * 2, "%02x", ((char *)(cap + 1))[i]);
 					Log(3, "Unknown capability code 0x%02x len %u '%s'", cap->cap_code, cap->cap_length, str);
 				}
 			} else
@@ -234,6 +261,7 @@ static int bgpsession(int sock)
 	hold_timer = time(NULL);
 	while (1)
 	{
+		if (terminated) exit(3);
 		curtime = time(NULL);
 		FD_ZERO(&fd);
 		FD_SET(sock, &fd);
@@ -255,6 +283,7 @@ static int bgpsession(int sock)
 		if (hold_time && hold_time - rest_time < hold_time / 3)
 			tv.tv_sec = hold_time - rest_time;
 		r = select(sock + 1, &fd, NULL, NULL, &tv);
+		if (terminated) exit(3);
 		curtime = time(NULL);
 		if (r == 0)
 		{	/* send KEEPALIVE */
@@ -290,6 +319,7 @@ send_keepalive:
 		}
 		/* message arrived */
 		len = blockread(sock, &hdr, sizeof(hdr) - sizeof(hdr.pktdata));
+		if (terminated) exit(3);
 		if (len != sizeof(hdr) - sizeof(hdr.pktdata))
 		{	Log(0, "Can't read from socket: %s", strerror(errno));
 			return 1;
@@ -404,7 +434,22 @@ send_keepalive:
 			if (attr_code == 2)
 			{	aspath_type = *pathattr++;
 				aspath_len = *pathattr++;
-				aspath = (uint16_t *)pathattr;
+				if (as32_support) {
+					aspath = (uint32_t *)pathattr;
+				} else {
+					static int aspath_buf_len = 0;
+					static uint32_t *aspath_buf = NULL;
+					uint16_t *aspath16 = (uint16_t *)pathattr;
+
+					if (aspath_len > aspath_buf_len) {
+						aspath_buf_len = aspath_len;
+						aspath_buf = realloc(aspath_buf, aspath_buf_len * sizeof(*aspath));
+					}
+					for (i = 0; i < aspath_len; i++) {
+						aspath_buf[i] = htonl(ntohs(aspath16[i]));
+					}
+					aspath = aspath_buf;
+				}
 				continue;
 			}
 			if (attr_code == 3)
@@ -435,6 +480,27 @@ send_keepalive:
 			}
 			if (attr_code == 10)
 			{	/* RR cluster ID, ignore */
+				continue;
+			}
+			if (attr_code == 17)
+			{	/* AS4_PATH */
+				if (as32_support)
+				{
+					Log(1, "AS4_PATH optional attribute ignored from AS4-supported speaker");
+				}
+				else
+				{
+					aspath_type = *pathattr++;
+					i = *pathattr++;
+					if (i <= aspath_len)
+						memcpy(aspath + aspath_len - i, pathattr, i * 4);
+					Log(1, "AS4_PATH optional attribute used");
+				}
+				continue;
+			}
+			if (attr_code == 18)
+			{	/* AS4_AGGREGATOR */
+				Log(1, "AS4_AGGREGATOR optional attribute ignored");
 				continue;
 			}
 			if ((attr_flags & 0x80) == 0)
@@ -516,6 +582,14 @@ void rmpid(void)
 	unlink(pidfile);
 }
 
+
+static void sighnd(int signo)
+{
+	Log(1, "Program terminated by signal %u", signo);
+	terminated = 1;
+	/* exit(3); */
+}
+
 int main(int argc, char *argv[])
 {
 	int sockin, sockout, newsock;
@@ -564,6 +638,9 @@ int main(int argc, char *argv[])
 			fprintf(stderr, "Can't create %s: %s\n", pidfile, strerror(errno));
 	}
 	setstatus(IDLE);
+	signal(SIGINT, sighnd);
+	signal(SIGTERM, sighnd);
+	signal(SIGQUIT, sighnd);
 	init_map(argc, argv);
 	/* open listening socket */
 	memset(&serv_addr, 0, sizeof(serv_addr));
@@ -580,6 +657,7 @@ int main(int argc, char *argv[])
 
 	while (1)
 	{
+		if (terminated) exit(3);
 		curtime = time(NULL);
 		if (sockin == -1)
 		{	if ((sockin = socket(AF_INET, SOCK_STREAM, 0)) == -1)
@@ -639,6 +717,7 @@ int main(int argc, char *argv[])
 		if (select_wait + curtime > last_out + reconnect_time && sockout == -1)
 			select_wait = last_out + reconnect_time - curtime;
 repselect:
+		if (terminated) exit(3);
 		if (sockin == -1 && sockout == -1)
 		{	sleep(select_wait);
 			curtime = time(NULL);
@@ -659,6 +738,7 @@ repselect:
 		tv.tv_usec = 0;
 		selectstart = curtime;
 		r = select(((sockin > sockout) ? sockin : sockout) + 1, &fdr, &fdw, &fde, &tv);
+		if (terminated) exit(3);
 		curtime = time(NULL);
 		if (r == -1)
 		{	Log(0, "Select: %s", strerror(errno));

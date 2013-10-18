@@ -1,5 +1,4 @@
 
-- asn32 support
 - improve perl hooks
 - syslog
 - loglevel commandline support (verbose)

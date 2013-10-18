@@ -51,9 +51,9 @@ static void mapsetclass(uint32_t from, uint32_t to, class_type class);
 static int  chclass(struct route_obj *obj);
 #endif
 static int  perlfilter(uint32_t prefix, int prefix_len,
-           int community_len, uint32_t *community, int aspath_len, uint16_t *aspath);
+           int community_len, uint32_t *community, int aspath_len, uint32_t *aspath);
 static int  perlupdate(uint32_t prefix, int prefix_len,
-           int community_len, uint32_t *community, int aspath_len, uint16_t *aspath, int added);
+           int community_len, uint32_t *community, int aspath_len, uint32_t *aspath, int added);
 static int  perlwithdraw(uint32_t prefix, int prefix_len);
 
 void boot_DynaLoader(pTHX_ CV *cv);
@@ -117,14 +117,14 @@ static void exitperl(void)
   {
     perl_destruct(perl);
     perl_free(perl);
-    perl=NULL;
+    perl = NULL;
   }
 }
 
 static int PerlStart(void)
 {
    int rc;
-   char *perlargs[]={"", "", NULL};
+   char *perlargs[] = {"", "", NULL};
 
    perlargs[1] = perlfile;
    if (access(perlfile, R_OK))
@@ -133,12 +133,12 @@ static int PerlStart(void)
    }
    perl = perl_alloc();
    perl_construct(perl);
-   rc=perl_parse(perl, xs_init, 2, perlargs, NULL);
+   rc = perl_parse(perl, xs_init, 2, perlargs, NULL);
    if (rc)
    { Log(0, "Can't parse %s", perlfile);
      perl_destruct(perl);
      perl_free(perl);
-     perl=NULL;
+     perl = NULL;
      return 1;
    }
    atexit(exitperl);
@@ -287,7 +287,7 @@ static void communitystr(int comm_len, uint32_t *community, char *scomm, int len
 	}
 }
 
-static void aspathstr(int aspath_len, uint16_t *aspath, char *saspath, int len)
+static void aspathstr(int aspath_len, uint32_t *aspath, char *saspath, int len)
 {
 	char *p;
 	int i;
@@ -296,7 +296,7 @@ static void aspathstr(int aspath_len, uint16_t *aspath, char *saspath, int len)
 	p = saspath;
 	for (i = 0; i < aspath_len; i++)
 	{	if (*saspath) *p++ = ' ';
-		sprintf(p, "%u", ntohs(aspath[i]));
+		sprintf(p, "%u", ntohl(aspath[i]));
 		p += strlen(p);
 		if (p - saspath + 15 > len)
 			break;
@@ -305,7 +305,7 @@ static void aspathstr(int aspath_len, uint16_t *aspath, char *saspath, int len)
 
 #if NBITS > 0
 static class_type setclass(uint32_t *community, int community_len,
-                           uint16_t *aspath, int aspath_len,
+                           uint32_t *aspath, int aspath_len,
                            uint32_t prefix, int prefix_len)
 {
 	char saspath[256], scommunity[256], sprefix[32];
@@ -400,7 +400,7 @@ static int routedepth(struct route_obj *root)
 		}
 		if (r->right)
 		{	r = r->right;
-			if (++curdepth>maxdepth) maxdepth=curdepth;
+			if (++curdepth > maxdepth) maxdepth = curdepth;
 			continue;
 		}
 		if (r == root)
@@ -580,7 +580,7 @@ static void delroute(struct route_obj *route)
 		route->left->parent = route->parent;
 		if (route->right)
 		{	// add the route object with all its subtree
-			if (findroute(route->right, 2, NULL)!=route->right)
+			if (findroute(route->right, 2, NULL) != route->right)
 			{	Log(0, "Internal error in delroute!");
 				exit(3);
 			}
@@ -671,7 +671,7 @@ static void mapsetclass(uint32_t from, uint32_t to, class_type class)
 			lastbyte--;
 		}
 		if (firstbyte <= lastbyte)
-			shmemset(map, firstbyte, class, lastbyte-firstbyte+1);
+			shmemset(map, firstbyte, class, lastbyte - firstbyte + 1);
 	}
 #endif // NBITS
 }
@@ -743,7 +743,7 @@ void withdraw(uint32_t prefix, int prefix_len)
 }
 
 void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *community,
-            int aspath_len, uint16_t *aspath)
+            int aspath_len, uint32_t *aspath)
 {
 	struct route_obj r, *p;
 	int added;
@@ -829,7 +829,7 @@ void keepalive(void)
 }
 
 #if NBITS > 0
-static int shmid;
+static int shmid = -1;
 
 static void freeshmem(void)
 {
@@ -845,12 +845,6 @@ static void freeshmem(void)
 }
 #endif
 
-static void sighnd(int signo)
-{
-	Log(1, "Program terminated by signal %u", signo);
-	exit(3);
-}
-
 void init_map(int argc, char *argv[])
 {
 #if NBITS > 0
@@ -861,13 +855,6 @@ void init_map(int argc, char *argv[])
 		k = atol(argv[1]);
 	else
 		k = mapkey;
-	map = NULL;
-	shmid = -1;
-#endif
-	signal(SIGINT, sighnd);
-	signal(SIGTERM, sighnd);
-	signal(SIGQUIT, sighnd);
-#if NBITS > 0
 	atexit(freeshmem);
 shmagain:
 	shmid = shmget(k, MAPSIZE, 0600);
@@ -899,7 +886,7 @@ shmagain:
 		do_initmap();
 }
 
-static int perlfilter(uint32_t prefix, int prefix_len, int community_len, uint32_t *community, int aspath_len, uint16_t *aspath)
+static int perlfilter(uint32_t prefix, int prefix_len, int community_len, uint32_t *community, int aspath_len, uint32_t *aspath)
 {
    char *prc;
    char sprefix[32], scommunity[256], saspath[256];
@@ -954,7 +941,7 @@ static int perlfilter(uint32_t prefix, int prefix_len, int community_len, uint32
    return rc;
 }
 
-static int perlupdate(uint32_t prefix, int prefix_len, int community_len, uint32_t *community, int aspath_len, uint16_t *aspath, int added)
+static int perlupdate(uint32_t prefix, int prefix_len, int community_len, uint32_t *community, int aspath_len, uint32_t *aspath, int added)
 {
    char *prc;
    char sprefix[32], scommunity[256], saspath[256];

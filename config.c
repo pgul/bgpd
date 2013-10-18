@@ -12,7 +12,7 @@
 #include "bgpd.h"
 #include "ipmap.h"
 
-uint16_t my_as, remote_as;
+uint32_t my_as, remote_as;
 uint32_t router_id;
 in_addr_t remote;
 uint16_t bindport, port;

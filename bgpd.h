@@ -60,14 +60,13 @@ struct notify {
 
 extern uint32_t mask[];
 
-extern uint16_t my_as;
+extern uint32_t my_as, remote_as;
 extern uint32_t router_id;
 extern in_addr_t remote;
 extern uint16_t bindport, port;
 extern time_t waittime, reconnect_time;
 extern uint16_t holdtime;
 extern int ballance_cnt, maxdepth;
-extern uint16_t remote_as;
 extern char perlfile[], plsetclass[], plinitmap[], plbgpup[], plbgpdown[];
 extern char plfilter[], plupdate[], plwithdraw[];
 extern char pidfile[];
@@ -75,7 +74,7 @@ extern int mapinited;
 
 void Log(int level, char *format, ...);
 void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *community,
-            int aspath_len, uint16_t *aspath);
+            int aspath_len, uint32_t *aspath);
 void withdraw(uint32_t prefix, int prefix_len);
 void reset_table(void);
 void init_map(int argc, char *argv[]);
