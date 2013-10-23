@@ -269,9 +269,9 @@ static int bgpsession(int sock)
 		tv.tv_usec = 0;
 		rest_time = curtime - keepalive_sent;
 		if (hold_time)
-		{	if (rest_time >= hold_time/3)
+		{	if (rest_time >= hold_time / 3)
 				goto send_keepalive;
-			tv.tv_sec = hold_time/3-rest_time;
+			tv.tv_sec = hold_time / 3 - rest_time;
 		} else
 			tv.tv_sec = 0;
 		rest_time = curtime - hold_timer;
@@ -294,7 +294,7 @@ send_keepalive:
 				{	send_notify(sock, 1, 1); /* Connection Not Synchronized */
 					Log(0, "Bad my marker");
 					for (i = 0; i < len && i < (sizeof(str) - 1) / 2; i++)
-						sprintf(str + i*2, "%02x", *(((char *)&hdr) + i));
+						sprintf(str + i * 2, "%02x", *(((char *)&hdr) + i));
 					Log(0, "Packet header: %s", str);
 					//return 1;
 					memset(hdr.marker, 0xff, sizeof(hdr.marker));
@@ -329,7 +329,7 @@ send_keepalive:
 			{	send_notify(sock, 1, 1); /* Connection Not Synchronized */
 				Log(0, "Bad marker");
 				for (i = 0; i < len && i < (sizeof(str) - 1) / 2; i++)
-					sprintf(str+i*2, "%02x", *(((char *)&hdr) + i));
+					sprintf(str + i * 2, "%02x", *(((char *)&hdr) + i));
 				Log(0, "Received packet header: %s", str);
 				//return 1;
 				break;
@@ -341,7 +341,7 @@ send_keepalive:
 			return 1;
 		}
 		if (hdr.length > len)
-		{	if (blockread(sock, hdr.pktdata, hdr.length-len) != hdr.length-len)
+		{	if (blockread(sock, hdr.pktdata, hdr.length - len) != hdr.length - len)
 			{	Log(0, "Can't read from socket: %s", strerror(errno));
 				return 1;
 			}
@@ -354,7 +354,7 @@ send_keepalive:
 		if (hdr.type == 3)
 		{	/* NOTIFY */
 			for (i = 0; i < hdr.length - (sizeof(hdr) - sizeof(hdr.pktdata)) && i < (sizeof(str) - 1) / 2; i++)
-				sprintf(str+i*2, "%02x", hdr.pktdata[i]);
+				sprintf(str + i * 2, "%02x", hdr.pktdata[i]);
 			Log(0, "Received packet data: %s", str);
 
 			notify = (struct notify *)hdr.pktdata;
@@ -384,11 +384,11 @@ send_keepalive:
 			reset_table();
 			do_initmap();
 			perlbgpup();
-			mapinited=0;
-			wasupdate=1;
+			mapinited = 0;
+			wasupdate = 1;
 		}
 		withdraw_length = ntohs(*(uint16_t *)(hdr.pktdata));
-		withdraw_routes = hdr.pktdata+2;
+		withdraw_routes = hdr.pktdata + 2;
 		pathattr_length = ntohs(*(uint16_t *)(withdraw_routes + withdraw_length));
 		pathattr = withdraw_routes + withdraw_length + 2;
 		nlri_length = hdr.length - 23 - withdraw_length - pathattr_length;
