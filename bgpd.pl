@@ -31,3 +31,14 @@ sub update
 	return 1;
 }
 
+sub update_done
+{
+# called when all updates from packet processed
+}
+
+sub keepalive
+{
+# available variable:
+# $sent - true if it's outbound keepalive, false if inbound
+}
+

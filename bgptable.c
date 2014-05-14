@@ -55,6 +55,8 @@ static int  perlfilter(uint32_t prefix, int prefix_len,
 static int  perlupdate(uint32_t prefix, int prefix_len,
            int community_len, uint32_t *community, int aspath_len, uint32_t *aspath, int added);
 static int  perlwithdraw(uint32_t prefix, int prefix_len);
+static void perlupdate_done(void);
+static void perlkeepalive(int sent);
 
 void boot_DynaLoader(pTHX_ CV *cv);
 
@@ -780,6 +782,11 @@ void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *commun
 #endif
 }
 
+void update_done(void)
+{
+	perlupdate_done();
+}
+
 void reset_table(void)
 {
 	struct route_obj *cur = route_root, *p;
@@ -823,9 +830,10 @@ void do_initmap(void)
 	mapinited=1;
 }
 
-void keepalive(void)
+void keepalive(int sent)
 {
-	Log(5, "KeepAlive, total %u prefixes", prefix_cnt);
+	Log(5, "KeepAlive %s, total %u prefixes", (sent ? "sent" : "received"), prefix_cnt);
+	perlkeepalive(sent);
 }
 
 #if NBITS > 0
@@ -1045,5 +1053,52 @@ static int perlwithdraw(uint32_t prefix, int prefix_len)
      rc = 1;
    }
    return rc;
+}
+
+static void perlupdate_done(void)
+{
+   STRLEN n_a;
+
+   dSP;
+   if (plupdatedone[0] == '\0') return;
+   ENTER;
+   SAVETMPS;
+   PUSHMARK(SP);
+   PUTBACK;
+   perl_call_pv(plupdatedone, G_EVAL|G_SCALAR);
+   SPAGAIN;
+   PUTBACK;
+   FREETMPS;
+   LEAVE;
+   if (SvTRUE(ERRSV))
+   {
+     Log(0, "Perl %s() eval error: %s", plupdatedone, SvPV(ERRSV, n_a));
+     plupdatedone[0] = '\0';
+   }
+}
+
+static void perlkeepalive(int sent)
+{
+   SV *svsent;
+   STRLEN n_a;
+
+   dSP;
+   if (plkeepalive[0] == '\0') return;
+   svsent = perl_get_sv("sent", TRUE);
+   sv_setpv(svsent, sent ? "1" : "");
+   ENTER;
+   SAVETMPS;
+   PUSHMARK(SP);
+   PUTBACK;
+   perl_call_pv(plkeepalive, G_EVAL|G_SCALAR);
+   SPAGAIN;
+   PUTBACK;
+   FREETMPS;
+   LEAVE;
+   if (SvTRUE(ERRSV))
+   {
+     Log(0, "Perl %s() eval error: %s", plkeepalive, SvPV(ERRSV, n_a));
+     plkeepalive[0] = '\0';
+   }
 }
 

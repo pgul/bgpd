@@ -21,7 +21,7 @@ uint16_t holdtime;
 int ballance_cnt, maxdepth;
 unsigned long int mapkey;
 char perlfile[256], plsetclass[256], plinitmap[256], plbgpup[256], plbgpdown[256];
-char plfilter[256], plupdate[256], plwithdraw[256];
+char plfilter[256], plupdate[256], plwithdraw[256], plupdatedone[256], plkeepalive[256];
 char pidfile[256] = PIDFILE;
 
 int config(char *confname)
@@ -48,6 +48,8 @@ int config(char *confname)
 	strcpy(plfilter, "filter");
 	strcpy(plupdate, "update");
 	strcpy(plwithdraw, "withdraw");
+	strcpy(plupdatedone, "update_done");
+	strcpy(plkeepalive, "keepalive");
 	f = fopen(confname, "r");
 	if (f == NULL)
 	{	Log(0, "Can't open %s: %s", confname, strerror(errno));

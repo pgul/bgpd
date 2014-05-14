@@ -310,7 +310,7 @@ send_keepalive:
 				return 1;
 			}
 			//Log(4, "KeepAlive sent");
-			keepalive();
+			keepalive(1);
 			continue;
 		}
 		if (r == -1)
@@ -374,8 +374,8 @@ send_keepalive:
 		if (hdr.type == 4)
 		{	if (status == OPENCONFIRM)
 				setstatus(ESTABLISHED);
-			Log(4, "KeepAlive received");
 			Log(9, "hdr.length %d", hdr.length);
+			keepalive(0);
 			continue;
 		}
 		/* process UPDATE message */
@@ -538,6 +538,7 @@ send_keepalive:
 			update(prefix, prefix_len, community_len, community,
 			       aspath_len, aspath);
 		}
+		update_done();
 	}
 }
 

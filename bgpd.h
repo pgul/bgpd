@@ -68,7 +68,7 @@ extern time_t waittime, reconnect_time;
 extern uint16_t holdtime;
 extern int ballance_cnt, maxdepth;
 extern char perlfile[], plsetclass[], plinitmap[], plbgpup[], plbgpdown[];
-extern char plfilter[], plupdate[], plwithdraw[];
+extern char plfilter[], plupdate[], plwithdraw[], plupdatedone[], plkeepalive[];
 extern char pidfile[];
 extern int mapinited;
 
@@ -76,10 +76,11 @@ void Log(int level, char *format, ...);
 void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *community,
             int aspath_len, uint32_t *aspath);
 void withdraw(uint32_t prefix, int prefix_len);
+void update_done(void);
 void reset_table(void);
 void init_map(int argc, char *argv[]);
 void do_initmap(void);
 void perlbgpup(void);
 void perlbgpdown(void);
-void keepalive(void);
+void keepalive(int sent);
 int config(char *confname);
