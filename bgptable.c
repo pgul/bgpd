@@ -51,10 +51,10 @@ static void mapsetclass(uint32_t from, uint32_t to, class_type class);
 static int  chclass(struct route_obj *obj);
 #endif
 static int  perlfilter(uint32_t prefix, int prefix_len,
-           int community_len, uint32_t *community, int aspath_len, uint32_t *aspath);
-static int  perlupdate(uint32_t prefix, int prefix_len,
-           int community_len, uint32_t *community, int aspath_len, uint32_t *aspath, int added);
-static int  perlwithdraw(uint32_t prefix, int prefix_len);
+           int community_len, uint32_t *community, int aspath_len, uint32_t *aspath, uint32_t nexthop);
+static void perlupdate(uint32_t prefix, int prefix_len, int community_len,
+           uint32_t *community, int aspath_len, uint32_t *aspath, uint32_t nexthop, int added);
+static void perlwithdraw(uint32_t prefix, int prefix_len);
 static void perlupdate_done(void);
 static void perlkeepalive(int sent);
 
@@ -127,6 +127,7 @@ static int PerlStart(void)
 {
    int rc;
    char *perlargs[] = {"", "", NULL};
+   SV *svremote, *svremoteas;
 
    perlargs[1] = perlfile;
    if (access(perlfile, R_OK))
@@ -144,6 +145,12 @@ static int PerlStart(void)
      return 1;
    }
    atexit(exitperl);
+   svremote    = perl_get_sv("remote", TRUE);
+   svremoteas  = perl_get_sv("remote_as", TRUE);
+   sv_setpv(svremote, inet_ntoa(*(struct in_addr *)&remote));
+   sv_setiv(svremoteas, remote_as);
+   SvREADONLY_on(svremote);
+   SvREADONLY_on(svremoteas);
    return 0;
 }
 
@@ -228,6 +235,9 @@ static class_type perlsetclass(char *community, char *aspath, char *prefix)
    sv_setpv(svcommunity, community);
    sv_setpv(svaspath, aspath);
    sv_setpv(svprefix, prefix);
+   SvREADONLY_on(svcommunity);
+   SvREADONLY_on(svaspath);
+   SvREADONLY_on(svprefix);
    ENTER;
    SAVETMPS;
    PUSHMARK(SP);
@@ -271,6 +281,7 @@ static void communitystr(int comm_len, uint32_t *community, char *scomm, int len
 	int i;
 
 	p = scomm;
+	*p = '\0';
 	for (i = 0; i < comm_len; i++)
 	{	if (*scomm) *p++ = ' ';
 		firstas = ntohs(*(uint16_t *)(community + i));
@@ -708,7 +719,7 @@ void withdraw(uint32_t prefix, int prefix_len)
 	struct route_obj parent, *pp;
 #endif
 
-	if (perlfilter(prefix, prefix_len, 0, NULL, 0, NULL) == 0)
+	if (perlfilter(prefix, prefix_len, 0, NULL, 0, NULL, 0) == 0)
 	{
 		Log(2, "Filtered withdraw route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
 		return;
@@ -745,12 +756,12 @@ void withdraw(uint32_t prefix, int prefix_len)
 }
 
 void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *community,
-            int aspath_len, uint32_t *aspath)
+            int aspath_len, uint32_t *aspath, uint32_t nexthop)
 {
 	struct route_obj r, *p;
 	int added;
 
-	if (perlfilter(prefix, prefix_len, community_len, community, aspath_len, aspath) == 0)
+	if (perlfilter(prefix, prefix_len, community_len, community, aspath_len, aspath, nexthop) == 0)
 	{
 		Log(2, "Filtered route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
 		return;
@@ -766,7 +777,7 @@ void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *commun
 	{	Log(0, "Internal error!");
 		exit(2);
 	}
-	perlupdate(prefix, prefix_len, community_len, community, aspath_len, aspath, added);
+	perlupdate(prefix, prefix_len, community_len, community, aspath_len, aspath, nexthop, added);
 #if NBITS == 0
 	Log(2, "Updated %sroute %s/%u",
 	    (added ? "" : "existing "),
@@ -894,11 +905,12 @@ shmagain:
 		do_initmap();
 }
 
-static int perlfilter(uint32_t prefix, int prefix_len, int community_len, uint32_t *community, int aspath_len, uint32_t *aspath)
+static int perlfilter(uint32_t prefix, int prefix_len, int community_len, uint32_t *community,
+                      int aspath_len, uint32_t *aspath, uint32_t nexthop)
 {
    char *prc;
    char sprefix[32], scommunity[256], saspath[256];
-   SV *svcommunity, *svaspath, *svprefix, *svret;
+   SV *svcommunity, *svaspath, *svprefix, *svnexthop, *svret;
    STRLEN n_a;
    int rc;
 
@@ -907,12 +919,18 @@ static int perlfilter(uint32_t prefix, int prefix_len, int community_len, uint32
    svcommunity = perl_get_sv("community", TRUE);
    svaspath    = perl_get_sv("aspath", TRUE);
    svprefix    = perl_get_sv("prefix", TRUE);
+   svnexthop   = perl_get_sv("next_hop", TRUE);
    sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
    aspathstr(aspath_len, aspath, saspath, sizeof(saspath));
    communitystr(community_len, community, scommunity, sizeof(scommunity));
    sv_setpv(svcommunity, scommunity);
    sv_setpv(svaspath, saspath);
    sv_setpv(svprefix, sprefix);
+   sv_setpv(svnexthop, inet_ntoa(*(struct in_addr *)&nexthop));
+   SvREADONLY_on(svcommunity);
+   SvREADONLY_on(svaspath);
+   SvREADONLY_on(svprefix);
+   SvREADONLY_on(svnexthop);
    ENTER;
    SAVETMPS;
    PUSHMARK(SP);
@@ -949,19 +967,19 @@ static int perlfilter(uint32_t prefix, int prefix_len, int community_len, uint32
    return rc;
 }
 
-static int perlupdate(uint32_t prefix, int prefix_len, int community_len, uint32_t *community, int aspath_len, uint32_t *aspath, int added)
+static void perlupdate(uint32_t prefix, int prefix_len, int community_len, uint32_t *community,
+                      int aspath_len, uint32_t *aspath, uint32_t nexthop, int added)
 {
-   char *prc;
    char sprefix[32], scommunity[256], saspath[256];
-   SV *svcommunity, *svaspath, *svprefix, *svnew, *svret;
+   SV *svcommunity, *svaspath, *svprefix, *svnexthop, *svnew;
    STRLEN n_a;
-   int rc;
 
    dSP;
-   if (plupdate[0] == '\0') return 1;
+   if (plupdate[0] == '\0') return;
    svcommunity = perl_get_sv("community", TRUE);
    svaspath    = perl_get_sv("aspath", TRUE);
    svprefix    = perl_get_sv("prefix", TRUE);
+   svnexthop   = perl_get_sv("next_hop", TRUE);
    svnew       = perl_get_sv("new", TRUE);
    sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
    aspathstr(aspath_len, aspath, saspath, sizeof(saspath));
@@ -969,18 +987,19 @@ static int perlupdate(uint32_t prefix, int prefix_len, int community_len, uint32
    sv_setpv(svcommunity, scommunity);
    sv_setpv(svaspath, saspath);
    sv_setpv(svprefix, sprefix);
+   sv_setpv(svnexthop, inet_ntoa(*(struct in_addr *)&nexthop));
    sv_setpv(svnew, added ? "1" : "");
+   SvREADONLY_on(svcommunity);
+   SvREADONLY_on(svaspath);
+   SvREADONLY_on(svprefix);
+   SvREADONLY_on(svnexthop);
+   SvREADONLY_on(svnew);
    ENTER;
    SAVETMPS;
    PUSHMARK(SP);
    PUTBACK;
    perl_call_pv(plupdate, G_EVAL|G_SCALAR);
    SPAGAIN;
-   svret = POPs;
-   if (SvTRUE(svret))
-     prc = strdup(SvPV(svret, n_a));
-   else
-     prc = NULL;
    PUTBACK;
    FREETMPS;
    LEAVE;
@@ -988,48 +1007,27 @@ static int perlupdate(uint32_t prefix, int prefix_len, int community_len, uint32
    {
      Log(0, "Perl %s() eval error: %s", plupdate, SvPV(ERRSV, n_a));
      plupdate[0] = '\0';
-     prc = NULL;
    }
-   if (n_a == 0 && prc)
-   {
-     free(prc);
-     prc = NULL;
-   }
-   if (prc)
-   { 
-     rc = atoi(prc);
-     free(prc);
-   } else
-   {
-     rc = 1;
-   }
-   return rc;
 }
 
-static int perlwithdraw(uint32_t prefix, int prefix_len)
+static void perlwithdraw(uint32_t prefix, int prefix_len)
 {
-   char *prc;
    char sprefix[32];
-   SV *svprefix, *svret;
+   SV *svprefix;
    STRLEN n_a;
-   int rc;
 
    dSP;
-   if (plwithdraw[0] == '\0') return 1;
+   if (plwithdraw[0] == '\0') return;
    svprefix    = perl_get_sv("prefix", TRUE);
    sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
    sv_setpv(svprefix, sprefix);
+   SvREADONLY_on(svprefix);
    ENTER;
    SAVETMPS;
    PUSHMARK(SP);
    PUTBACK;
    perl_call_pv(plwithdraw, G_EVAL|G_SCALAR);
    SPAGAIN;
-   svret = POPs;
-   if (SvTRUE(svret))
-     prc = strdup(SvPV(svret, n_a));
-   else
-     prc = NULL;
    PUTBACK;
    FREETMPS;
    LEAVE;
@@ -1037,22 +1035,7 @@ static int perlwithdraw(uint32_t prefix, int prefix_len)
    {
      Log(0, "Perl %s() eval error: %s", plwithdraw, SvPV(ERRSV, n_a));
      plwithdraw[0] = '\0';
-     prc = NULL;
    }
-   if (n_a == 0 && prc)
-   {
-     free(prc);
-     prc = NULL;
-   }
-   if (prc)
-   { 
-     rc = atoi(prc);
-     free(prc);
-   } else
-   {
-     rc = 1;
-   }
-   return rc;
 }
 
 static void perlupdate_done(void)
@@ -1086,6 +1069,7 @@ static void perlkeepalive(int sent)
    if (plkeepalive[0] == '\0') return;
    svsent = perl_get_sv("sent", TRUE);
    sv_setpv(svsent, sent ? "1" : "");
+   SvREADONLY_on(svsent);
    ENTER;
    SAVETMPS;
    PUSHMARK(SP);

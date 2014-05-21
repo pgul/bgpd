@@ -1,3 +1,6 @@
+
+# variables $remote and $remote_as available for all functions
+
 sub initmap
 # Called when shared memory segment created or before bgpup if used old segment
 {
@@ -26,9 +29,6 @@ sub update
 {
 # available variables:
 # $community, $aspath, $prefix
-# Return 0 to deny update, 1 to accept
-	return 0 if $prefix =~ /(10|127)\./;
-	return 1;
 }
 
 sub update_done
@@ -40,5 +40,16 @@ sub keepalive
 {
 # available variable:
 # $sent - true if it's outbound keepalive, false if inbound
+}
+
+sub filter
+{
+# available variables:
+# $community, $aspath, $prefix, $nexthop
+# $community and $aspath undefined for withdrawed announces
+# Return 0 to deny update, 1 to accept
+
+	return 0 if $prefix =~ /^(10|127)\./;
+	return 1;	# accept
 }
 

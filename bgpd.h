@@ -41,6 +41,12 @@ struct capability {
 	char cap_length;
 } __attribute__((packed));
 
+struct mp_cap {
+	uint16_t afi;
+	char safi;
+	char data[0];
+} __attribute__((packed));
+
 struct notify {
 	char error_code;
 	char error_subcode;
@@ -74,7 +80,7 @@ extern int mapinited;
 
 void Log(int level, char *format, ...);
 void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *community,
-            int aspath_len, uint32_t *aspath);
+            int aspath_len, uint32_t *aspath, uint32_t nexthop);
 void withdraw(uint32_t prefix, int prefix_len);
 void update_done(void);
 void reset_table(void);

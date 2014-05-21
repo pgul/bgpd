@@ -99,6 +99,7 @@ static int bgpsession(int sock)
 	struct open_hdr *open_hdr;
 	struct oparam_struct *op;
 	struct capability *cap;
+	struct mp_cap *mp;
 	struct notify *notify;
 	fd_set fd;
 	struct timeval tv;
@@ -127,11 +128,22 @@ static int bgpsession(int sock)
 	open_hdr->router_id = router_id;
 	op = (struct oparam_struct *)(open_hdr + 1);
 	op->param_type = 2; /* Capability */
+
 	cap = (struct capability *)(op + 1);
-	cap->cap_code = 65;
+	cap->cap_code = 65; /* Support 4-byte AS numbers */
 	cap->cap_length = 4;
 	*(uint32_t *)(cap + 1) = htonl(my_as);
 	op->param_length = sizeof(*cap) + cap->cap_length;
+
+	cap = (struct capability *)((char *)(cap + 1) + cap->cap_length);
+	cap->cap_code = 1; /* Multiprotocol extension */
+	mp = (struct mp_cap *)(cap + 1);
+	mp->afi = htons(1);	/* AFI_IP */
+	mp->safi = 0;		/* 1 - SAFI_UNICAST */
+	mp->data[0] = 1;	/* Length of Next Hop Network Address */
+	cap->cap_length = sizeof(*mp) + 1;
+	op->param_length += sizeof(*cap) + cap->cap_length;
+
 	open_hdr->oparam_len = sizeof(*op) + op->param_length;
 	len = sizeof(hdr) - sizeof(hdr.pktdata) + sizeof(*open_hdr) + open_hdr->oparam_len;
 	hdr.length = htons(len);
@@ -206,13 +218,13 @@ static int bgpsession(int sock)
 			{	/* Capability */
 				cap = (struct capability *)(op + 1);
 				if (cap->cap_code == 1)
-				{	Log(5, "Remote support some Multiprotocol extensions");
+				{	Log(5, "Remote supports some Multiprotocol extensions");
 				} else if (cap->cap_code == 2) /* Route Refresh Capability */
-				{	Log(5, "Remote support route refresh");
+				{	Log(5, "Remote supports route refresh");
 				} else if (cap->cap_code == 64)
-				{	Log(5, "Remote support graceful restart");
+				{	Log(5, "Remote supports graceful restart");
 				} else if (cap->cap_code == 65)
-				{	Log(5, "Remote support 4-byte AS numbers");
+				{	Log(5, "Remote supports 4-byte AS numbers");
 					if (cap->cap_length != 4) {
 						Log(1, "Bad AS4 support capability length %u, expected 4", cap->cap_length);
 						send_notify(sock, 2, 4);
@@ -224,6 +236,10 @@ static int bgpsession(int sock)
 						return 1;
 					}
 					as32_support = 1;
+				} else if (cap->cap_code == 70)
+				{	Log(5, "Remote supports enhanced route refresh");
+				} else if (cap->cap_code == 128)
+				{	Log(5, "Remote supports route refresh (old cisco router)");
 				} else
 				{	str[0] = '\0';
 					for (i = 0; i < cap->cap_length && i < (sizeof(str) - 1) / 2; i++)
@@ -245,7 +261,7 @@ static int bgpsession(int sock)
 #endif
 	}
 	Log(2, "Remote AS: %u, remote router-id %s",
-	    remote_as, inet_ntoa(*((struct in_addr *)&open_hdr->router_id)));
+	    remote_as, inet_ntoa(*(struct in_addr *)&open_hdr->router_id));
 	/* send OpenConfirm */
 	hdr.type = 4; /* KEEPALIVE */
 	len = sizeof(hdr) - sizeof(hdr.pktdata);
@@ -434,6 +450,15 @@ send_keepalive:
 			if (attr_code == 2)
 			{	aspath_type = *pathattr++;
 				aspath_len = *pathattr++;
+				if (attr_length != aspath_len * (as32_support ? 4 : 2) + 2) {
+					int aspath_len_calc = (attr_length - 2) / (as32_support ? 4 : 2);
+					Log(4, "aspath length %u, should be %u", aspath_len, aspath_len_calc);
+					if (aspath_len > aspath_len_calc) {
+						Log(1, "Aspath length adjusted, %u to %u", aspath_len, aspath_len_calc);
+						aspath_len = aspath_len_calc;
+					}
+				}
+
 				if (as32_support) {
 					aspath = (uint32_t *)pathattr;
 				} else {
@@ -536,7 +561,7 @@ send_keepalive:
 			//    inet_ntoa(*(struct in_addr *)&prefix), prefix_len,
 			//    nlri_length);
 			update(prefix, prefix_len, community_len, community,
-			       aspath_len, aspath);
+			       aspath_len, aspath, nexthop);
 		}
 		update_done();
 	}
