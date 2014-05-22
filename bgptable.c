@@ -1084,6 +1084,7 @@ void reconfig(void)
 		} else
 		{
 			cur->disabled = 0;
+			perlupdate(prefix, cur->prefix_len, cur->community_len, cur->aspath + cur->aspath_len, cur->aspath_len, cur->aspath, cur->nexthop, 1);
 #if NBITS > 0
 			cur->class = setclass(cur->aspath + cur->aspath_len, cur->community_len, cur->aspath, cur->aspath_len, prefix, cur->prefix_len);
 			chclass(cur);
