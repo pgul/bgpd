@@ -26,7 +26,7 @@ enum statustype {IDLE, CONNECT, ACTIVE, OPENSENT, OPENCONFIRM, ESTABLISHED, NO_S
 char *statusstr[] =
     { "Idle", "Connect", "Active", "OpenSent", "OpenConfirm", "Established", "Unknown" };
 uint32_t mask[33];
-static int terminated = 0;
+static int terminated = 0, need_reconfig = 0;
 
 static int blockread(int h, void *vbuf, int size)
 {
@@ -35,7 +35,12 @@ static int blockread(int h, void *vbuf, int size)
 	while (size > 0)
 	{	res = read(h, buf, size);
 		if (res < 0)
-		{	Log(3, "read socket: %s", strerror(errno));
+		{	if (errno == EINTR)
+			{
+				if (terminated) return -1;
+				continue;
+			}
+			Log(3, "read socket: %s", strerror(errno));
 			return res;
 		}
 		if (res == 0)
@@ -50,7 +55,7 @@ static int blockread(int h, void *vbuf, int size)
 		len += res;
 		size -= res;
 		buf += res;
-		if (terminated) exit(3);
+		if (terminated) return len;
 	}
 	return len;
 }
@@ -225,9 +230,10 @@ static int bgpsession(int sock)
 				{	Log(5, "Remote supports graceful restart");
 				} else if (cap->cap_code == 65)
 				{	Log(5, "Remote supports 4-byte AS numbers");
-					if (cap->cap_length != 4) {
+					if (cap->cap_length != 4)
+					{
 						Log(1, "Bad AS4 support capability length %u, expected 4", cap->cap_length);
-						send_notify(sock, 2, 4);
+						send_notify(sock, 2, 4); /* Unsupported Optional Parameter */
 						return 1;
 					}
 					if (ntohl(*(uint32_t *)(cap + 1)) != remote_as)
@@ -271,13 +277,21 @@ static int bgpsession(int sock)
 	{	Log(0, "Can't write to socket: %s", strerror(errno));
 		return 1;
 	}
-	//Log(4, "KeepAlive sent");
+	// Log(4, "KeepAlive sent");
 	setstatus(OPENCONFIRM);
 	/* main loop - receiving messages and send keepalives */
 	hold_timer = time(NULL);
+	need_reconfig = 0;
 	while (1)
 	{
-		if (terminated) exit(3);
+		if (terminated) break;
+#ifdef SOFT_RECONFIG
+		if (need_reconfig)
+		{
+			reconfig();
+			need_reconfig = 0;
+		}
+#endif
 		curtime = time(NULL);
 		FD_ZERO(&fd);
 		FD_SET(sock, &fd);
@@ -299,7 +313,7 @@ static int bgpsession(int sock)
 		if (hold_time && hold_time - rest_time < hold_time / 3)
 			tv.tv_sec = hold_time - rest_time;
 		r = select(sock + 1, &fd, NULL, NULL, &tv);
-		if (terminated) exit(3);
+		if (terminated) break;
 		curtime = time(NULL);
 		if (r == 0)
 		{	/* send KEEPALIVE */
@@ -325,31 +339,35 @@ send_keepalive:
 			{	Log(0, "Can't write to socket: %s", strerror(errno));
 				return 1;
 			}
-			//Log(4, "KeepAlive sent");
+			// Log(4, "KeepAlive sent");
 			keepalive(1);
 			continue;
 		}
 		if (r == -1)
-		{	Log(0, "Select error: %s", strerror(errno));
+		{	if (errno == EINTR)
+				continue;
+			Log(0, "Select error: %s", strerror(errno));
 			return 1;
 		}
 		/* message arrived */
 		len = blockread(sock, &hdr, sizeof(hdr) - sizeof(hdr.pktdata));
-		if (terminated) exit(3);
+		if (terminated) break;
 		if (len != sizeof(hdr) - sizeof(hdr.pktdata))
 		{	Log(0, "Can't read from socket: %s", strerror(errno));
 			return 1;
 		}
 		for (i = 0; i < sizeof(hdr.marker); i++)
+		{
 			if (hdr.marker[i] != 0xff)
 			{	send_notify(sock, 1, 1); /* Connection Not Synchronized */
 				Log(0, "Bad marker");
 				for (i = 0; i < len && i < (sizeof(str) - 1) / 2; i++)
 					sprintf(str + i * 2, "%02x", *(((char *)&hdr) + i));
 				Log(0, "Received packet header: %s", str);
-				//return 1;
+				// return 1;
 				break;
 			}
+		}
 		hdr.length = ntohs(hdr.length);
 		if (hdr.length < len || hdr.length > 4096)
 		{	send_notify(sock, 1, 2); /* Bad Message Length */
@@ -450,29 +468,32 @@ send_keepalive:
 			if (attr_code == 2)
 			{	aspath_type = *pathattr++;
 				aspath_len = *pathattr++;
-				if (attr_length != aspath_len * (as32_support ? 4 : 2) + 2) {
+				if (attr_length != aspath_len * (as32_support ? 4 : 2) + 2)
+				{
 					int aspath_len_calc = (attr_length - 2) / (as32_support ? 4 : 2);
 					Log(4, "aspath length %u, should be %u", aspath_len, aspath_len_calc);
-					if (aspath_len > aspath_len_calc) {
+					if (aspath_len > aspath_len_calc)
+					{
 						Log(1, "Aspath length adjusted, %u to %u", aspath_len, aspath_len_calc);
 						aspath_len = aspath_len_calc;
 					}
 				}
 
-				if (as32_support) {
+				if (as32_support)
 					aspath = (uint32_t *)pathattr;
-				} else {
+				else
+				{
 					static int aspath_buf_len = 0;
 					static uint32_t *aspath_buf = NULL;
 					uint16_t *aspath16 = (uint16_t *)pathattr;
 
-					if (aspath_len > aspath_buf_len) {
+					if (aspath_len > aspath_buf_len)
+					{
 						aspath_buf_len = aspath_len;
 						aspath_buf = realloc(aspath_buf, aspath_buf_len * sizeof(*aspath));
 					}
-					for (i = 0; i < aspath_len; i++) {
+					for (i = 0; i < aspath_len; i++)
 						aspath_buf[i] = htonl(ntohs(aspath16[i]));
-					}
 					aspath = aspath_buf;
 				}
 				continue;
@@ -510,9 +531,7 @@ send_keepalive:
 			if (attr_code == 17)
 			{	/* AS4_PATH */
 				if (as32_support)
-				{
 					Log(1, "AS4_PATH optional attribute ignored from AS4-supported speaker");
-				}
 				else
 				{
 					aspath_type = *pathattr++;
@@ -565,6 +584,8 @@ send_keepalive:
 		}
 		update_done();
 	}
+	send_notify(sock, 6, 4); /* administrative reset */
+	return 1;
 }
 
 
@@ -611,9 +632,18 @@ void rmpid(void)
 
 static void sighnd(int signo)
 {
-	Log(1, "Program terminated by signal %u", signo);
-	terminated = 1;
-	/* exit(3); */
+	if (signo == SIGINT || signo == SIGTERM)
+	{
+		Log(1, "Program terminated by signal %u", signo);
+		terminated = 1;
+	}
+#ifdef SOFT_RECONFIG
+	else if (signo == SIGHUP)
+	{
+		Log(1, "Received signal SIGHUP, perform soft reconfiguration");
+		need_reconfig = 1;
+	}
+#endif
 }
 
 int main(int argc, char *argv[])
@@ -666,7 +696,7 @@ int main(int argc, char *argv[])
 	setstatus(IDLE);
 	signal(SIGINT, sighnd);
 	signal(SIGTERM, sighnd);
-	signal(SIGQUIT, sighnd);
+	signal(SIGHUP, sighnd);
 	init_map(argc, argv);
 	/* open listening socket */
 	memset(&serv_addr, 0, sizeof(serv_addr));
@@ -767,7 +797,9 @@ repselect:
 		if (terminated) exit(3);
 		curtime = time(NULL);
 		if (r == -1)
-		{	Log(0, "Select: %s", strerror(errno));
+		{	if (errno == EINTR)
+				continue;
+			Log(0, "Select: %s", strerror(errno));
 			setstatus(IDLE);
 			sleep(select_wait - (selectstart - curtime));
 		} else if (r == 0)
@@ -807,7 +839,7 @@ errconnect:
 				bgpsession(sockout);
 				reset_table();
 			}
-			if (sockin != -1 && FD_ISSET(sockin, &fdr))
+			else if (sockin != -1 && FD_ISSET(sockin, &fdr))
 			{	/* incoming connection */
 				setstatus(CONNECT);
 				if (sockout != -1) close(sockout);

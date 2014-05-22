@@ -30,17 +30,33 @@
 #define pTHX
 #endif
 
-struct route_obj {
+struct route_obj
+{
 	uint32_t ip;
 	char prefix_len;
 	class_type class;
 	struct route_obj *left, *right, *parent;
+#ifdef SOFT_RECONFIG
+	uint32_t nexthop;
+	unsigned char aspath_len;
+	unsigned char community_len;
+	unsigned char disabled;
+	uint32_t aspath[256]; /* will not be allocated fully */
+	uint32_t community[256]; /* place holder, actually stored after aspath */
+	/* then community */
+#endif
 };
+
+#ifdef SOFT_RECONFIG
+#define sizeofroute(r)	(sizeof(r) - sizeof((r).aspath) - sizeof((r).community) + (r).aspath_len * sizeof((r).aspath[0]) + (r).community_len * sizeof((r).community[0]))
+#else
+#define sizeofroute(r)	sizeof(r)
+#endif
 
 static struct route_obj *route_root = NULL;
 class_type *map;
 static int last_ballanced = 0;
-int prefix_cnt;
+static int prefix_cnt, passive_cnt;
 int mapinited;
 
 static PerlInterpreter *perl = NULL;
@@ -63,214 +79,214 @@ void boot_DynaLoader(pTHX_ CV *cv);
 #if NBITS > 0
 static XS(perl_initclass)
 {
-  dXSARGS;
-  char *ip;
-  STRLEN n_a;
-  char *p;
-  int preflen=24, class, added;
-  struct route_obj r, *pr;
+	dXSARGS;
+	char *ip;
+	STRLEN n_a;
+	char *p;
+	int preflen=24, class, added;
+	struct route_obj r, *pr;
 
-  if (items != 2)
-  { Log(0, "Wrong params number to setclass (need 2, exist %d)", items);
-    XSRETURN_EMPTY;
-  }
-  ip = (char *)SvPV(ST(0), n_a); if (n_a == 0) ip = "";
-  ip = strdup(ip);
-  class = SvIV(ST(1));
-  p=strchr(ip, '/');
-  if (p)
-  { *p++ = '\0';
-    preflen = atoi(p);
-  }
-  r.class = (class_type)class;
-  r.ip = ntohl(inet_addr(ip));
-  r.prefix_len = (char)preflen;
-  r.left = r.right = r.parent = NULL;
-  pr = findroute(&r, 1, &added);
-  if (!pr)
-  { Log(0, "Internal error!");
-    free(ip);
-    exit(2);
-  }
-  if (!added && pr->class == r.class)
-    return;
-  if (!added) pr->class = r.class;
-  chclass(pr);
-  Log(6, "Initclass %s/%u to %u", ip, preflen, class);
-  free(ip);
+	if (items != 2)
+	{	Log(0, "Wrong params number to setclass (need 2, exist %d)", items);
+	XSRETURN_EMPTY;
+	}
+	ip = (char *)SvPV(ST(0), n_a); if (n_a == 0) ip = "";
+	ip = strdup(ip);
+	class = SvIV(ST(1));
+	p = strchr(ip, '/');
+	if (p)
+	{	*p++ = '\0';
+		preflen = atoi(p);
+	}
+	memset(&r, 0, sizeof(r));
+	r.class = (class_type)class;
+	r.ip = ntohl(inet_addr(ip));
+	r.prefix_len = (char)preflen;
+	pr = findroute(&r, 1, &added);
+	if (!pr)
+	{	Log(0, "Internal error!");
+		free(ip);
+		exit(2);
+	}
+	if (!added && pr->class == r.class)
+		return;
+	if (!added) pr->class = r.class;
+	chclass(pr);
+	Log(6, "Initclass %s/%u to %u", ip, preflen, class);
+	free(ip);
 
-  XSRETURN_EMPTY;
+	XSRETURN_EMPTY;
 }
 #endif
 
 static void xs_init(pTHX)
 {
-  static char *file = __FILE__;
-  dXSUB_SYS;
-  newXS("DynaLoader::boot_DynaLoader", boot_DynaLoader, file);
+	static char *file = __FILE__;
+	dXSUB_SYS;
+	newXS("DynaLoader::boot_DynaLoader", boot_DynaLoader, file);
 #if NBITS > 0
-  newXS("initclass",  perl_initclass,  file);
+	newXS("initclass",  perl_initclass,  file);
 #endif
 }
 
 static void exitperl(void)
 {
-  if (perl)
-  {
-    perl_destruct(perl);
-    perl_free(perl);
-    perl = NULL;
-  }
+	if (perl)
+	{
+		perl_destruct(perl);
+		perl_free(perl);
+		perl = NULL;
+	}
 }
 
 static int PerlStart(void)
 {
-   int rc;
-   char *perlargs[] = {"", "", NULL};
-   SV *svremote, *svremoteas;
+	int rc;
+	char *perlargs[] = {"", "", NULL};
+	SV *svremote, *svremoteas;
 
-   perlargs[1] = perlfile;
-   if (access(perlfile, R_OK))
-   { Log(0, "Can't read %s: %s", perlfile, strerror(errno));
-     return 1;
-   }
-   perl = perl_alloc();
-   perl_construct(perl);
-   rc = perl_parse(perl, xs_init, 2, perlargs, NULL);
-   if (rc)
-   { Log(0, "Can't parse %s", perlfile);
-     perl_destruct(perl);
-     perl_free(perl);
-     perl = NULL;
-     return 1;
-   }
-   atexit(exitperl);
-   svremote    = perl_get_sv("remote", TRUE);
-   svremoteas  = perl_get_sv("remote_as", TRUE);
-   sv_setpv(svremote, inet_ntoa(*(struct in_addr *)&remote));
-   sv_setiv(svremoteas, remote_as);
-   SvREADONLY_on(svremote);
-   SvREADONLY_on(svremoteas);
-   return 0;
+	perlargs[1] = perlfile;
+	if (access(perlfile, R_OK))
+	{	Log(0, "Can't read %s: %s", perlfile, strerror(errno));
+		return 1;
+	}
+	perl = perl_alloc();
+	perl_construct(perl);
+	rc = perl_parse(perl, xs_init, 2, perlargs, NULL);
+	if (rc)
+	{	Log(0, "Can't parse %s", perlfile);
+		perl_destruct(perl);
+		perl_free(perl);
+		perl = NULL;
+		return 1;
+	}
+	atexit(exitperl);
+	svremote    = perl_get_sv("remote", TRUE);
+	svremoteas  = perl_get_sv("remote_as", TRUE);
+	sv_setpv(svremote, inet_ntoa(*(struct in_addr *)&remote));
+	sv_setiv(svremoteas, remote_as);
+	SvREADONLY_on(svremote);
+	SvREADONLY_on(svremoteas);
+	return 0;
 }
 
 static void perlinitmap(void)
 {
-   STRLEN n_a;
+	STRLEN n_a;
 
-   dSP;
-   ENTER;
-   SAVETMPS;
-   PUSHMARK(SP);
-   PUTBACK;
-   perl_call_pv(plinitmap, G_EVAL|G_SCALAR);
-   SPAGAIN;
-   PUTBACK;
-   FREETMPS;
-   LEAVE;
-   if (SvTRUE(ERRSV))
-   {
-     Log(0, "Perl %s() eval error: %s", plinitmap, SvPV(ERRSV, n_a));
-     exit(4);
-   } else
-     Log(2, "Perl %s() success", plinitmap);
+	dSP;
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	PUTBACK;
+	perl_call_pv(plinitmap, G_EVAL|G_SCALAR);
+	SPAGAIN;
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+	if (SvTRUE(ERRSV))
+	{
+		Log(0, "Perl %s() eval error: %s", plinitmap, SvPV(ERRSV, n_a));
+		exit(4);
+	} else
+		Log(2, "Perl %s() success", plinitmap);
 }
 
 void perlbgpup(void)
 {
-   STRLEN n_a;
+	STRLEN n_a;
 
-   dSP;
-   ENTER;
-   SAVETMPS;
-   PUSHMARK(SP);
-   PUTBACK;
-   perl_call_pv(plbgpup, G_EVAL|G_SCALAR);
-   SPAGAIN;
-   PUTBACK;
-   FREETMPS;
-   LEAVE;
-   if (SvTRUE(ERRSV))
-   {
-     Log(0, "Perl %s() eval error: %s", plbgpup, SvPV(ERRSV, n_a));
-     exit(4);
-   } else
-     Log(2, "Perl %s() success", plbgpup);
+	dSP;
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	PUTBACK;
+	perl_call_pv(plbgpup, G_EVAL|G_SCALAR);
+	SPAGAIN;
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+	if (SvTRUE(ERRSV))
+	{
+		Log(0, "Perl %s() eval error: %s", plbgpup, SvPV(ERRSV, n_a));
+		exit(4);
+	} else
+		Log(2, "Perl %s() success", plbgpup);
 }
 
 void perlbgpdown(void)
 {
-   STRLEN n_a;
+	STRLEN n_a;
 
-   dSP;
-   ENTER;
-   SAVETMPS;
-   PUSHMARK(SP);
-   PUTBACK;
-   perl_call_pv(plbgpdown, G_EVAL|G_SCALAR);
-   SPAGAIN;
-   PUTBACK;
-   FREETMPS;
-   LEAVE;
-   if (SvTRUE(ERRSV))
-   {
-     Log(0, "Perl %s() eval error: %s", plbgpdown, SvPV(ERRSV, n_a));
-     exit(4);
-   } else
-     Log(2, "Perl %s() success", plbgpdown);
+	dSP;
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	PUTBACK;
+	perl_call_pv(plbgpdown, G_EVAL|G_SCALAR);
+	SPAGAIN;
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+	if (SvTRUE(ERRSV))
+	{
+		Log(0, "Perl %s() eval error: %s", plbgpdown, SvPV(ERRSV, n_a));
+		exit(4);
+	} else
+		Log(2, "Perl %s() success", plbgpdown);
 }
 
 #if NBITS > 0
 static class_type perlsetclass(char *community, char *aspath, char *prefix)
 {
-   char *prc;
-   SV *svcommunity, *svaspath, *svprefix, *svret;
-   STRLEN n_a;
-   class_type class;
+	char *prc;
+	SV *svcommunity, *svaspath, *svprefix, *svret;
+	STRLEN n_a;
+	class_type class;
 
-   dSP;
-   svcommunity = perl_get_sv("community", TRUE);
-   svaspath    = perl_get_sv("aspath", TRUE);
-   svprefix    = perl_get_sv("prefix", TRUE);
-   sv_setpv(svcommunity, community);
-   sv_setpv(svaspath, aspath);
-   sv_setpv(svprefix, prefix);
-   SvREADONLY_on(svcommunity);
-   SvREADONLY_on(svaspath);
-   SvREADONLY_on(svprefix);
-   ENTER;
-   SAVETMPS;
-   PUSHMARK(SP);
-   PUTBACK;
-   perl_call_pv(plsetclass, G_EVAL|G_SCALAR);
-   SPAGAIN;
-   svret=POPs;
-   if (SvTRUE(svret))
-     prc = strdup(SvPV(svret, n_a));
-   else
-     prc = NULL;
-   PUTBACK;
-   FREETMPS;
-   LEAVE;
-   if (SvTRUE(ERRSV))
-   {
-     Log(0, "Perl %s() eval error: %s", plsetclass, SvPV(ERRSV, n_a));
-     exit(4);
-   }
-   if (n_a == 0 && prc)
-   {
-     free(prc);
-     prc = NULL;
-   }
-   if (prc)
-   { 
-     class = (class_type)atoi(prc);
-     free(prc);
-   } else
-   {
-     class = 0;
-   }
-   return class;
+	dSP;
+	svcommunity = perl_get_sv("community", TRUE);
+	svaspath    = perl_get_sv("aspath", TRUE);
+	svprefix    = perl_get_sv("prefix", TRUE);
+	sv_setpv(svcommunity, community);
+	sv_setpv(svaspath, aspath);
+	sv_setpv(svprefix, prefix);
+	SvREADONLY_on(svcommunity);
+	SvREADONLY_on(svaspath);
+	SvREADONLY_on(svprefix);
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	PUTBACK;
+	perl_call_pv(plsetclass, G_EVAL|G_SCALAR);
+	SPAGAIN;
+	svret=POPs;
+	if (SvTRUE(svret))
+		prc = strdup(SvPV(svret, n_a));
+	else
+		prc = NULL;
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+	if (SvTRUE(ERRSV))
+	{
+		Log(0, "Perl %s() eval error: %s", plsetclass, SvPV(ERRSV, n_a));
+		exit(4);
+	}
+	if (n_a == 0 && prc)
+	{
+		free(prc);
+		prc = NULL;
+	}
+	if (prc)
+	{ 
+		class = (class_type)atoi(prc);
+		free(prc);
+	} else
+	{
+		class = 0;
+	}
+	return class;
 }
 #endif
 
@@ -339,13 +355,24 @@ static int compare(struct route_obj *a, struct route_obj *b)
 	return 0;
 }
 
+#ifdef SOFT_RECONFIG
+/* including disabled */
+static struct route_obj *firstroute(struct route_obj *root)
+{
+	while (root->left)
+		root = root->left;
+	return root;
+}
+#endif
+
+/* including disabled */
 static struct route_obj *nextroute(struct route_obj *cur)
 {
 	struct route_obj *newcur;
 
 	if (!cur) return NULL;
 	if (!cur->right)
-	{	while(cur->parent)
+	{	while (cur->parent)
 		{	newcur = cur->parent;
 			if (newcur->right != cur)
 				return newcur;
@@ -525,10 +552,15 @@ static void ballance_tree(void)
 	}
 }
 
+/* addnew = 0  - return NULL if not found */
+/* addnew = -1 - return nearest bigger (incl disabled) if not found */
+/* addnew = 1  - create new node and add to tree if not found */
+/* addnew > 1  - add "new" to the tree, do not clone */
 static struct route_obj *findroute(struct route_obj *new, int addnew, int *added)
 {
 	struct route_obj *cur, *p, **newcur;
 	int i;
+
 	if (added) *added = 0;
 	for (cur = route_root; ; cur = *newcur)
 	{	if (cur == NULL)
@@ -547,16 +579,19 @@ static struct route_obj *findroute(struct route_obj *new, int addnew, int *added
 				else
 					return cur;
 			}
-			if (addnew==1)
-			{	p = malloc(sizeof(*cur));
+			if (addnew == 1)
+			{	p = malloc(sizeofroute(*new));
 				if (p == NULL)
 				{	Log(0, "Memory allocation fail!");
 					exit(1);
 				}
-				memcpy(p, new, sizeof(*cur));
+				memcpy(p, new, sizeofroute(*new));
 				if (p->right) p->right->parent = p;
 				if (p->left) p->left->parent = p;
 				prefix_cnt++;
+#ifdef SOFT_RECONFIG
+				if (p->disabled) passive_cnt++;
+#endif
 			} else
 				p = new;
 			p->parent = cur;
@@ -568,6 +603,26 @@ static struct route_obj *findroute(struct route_obj *new, int addnew, int *added
 		}
 	}
 }
+
+#if NBITS > 0
+static struct route_obj *aggregate_route(struct route_obj *cur)
+{
+	struct route_obj aggregate, *p;
+
+	memset(&aggregate, 0, sizeof(aggregate));
+	aggregate.ip = cur->ip; aggregate.prefix_len = cur->prefix_len;
+	while (aggregate.prefix_len)
+	{	aggregate.prefix_len--;
+		aggregate.ip &= 0xfffffffful << (32 - (int)aggregate.prefix_len);
+		if ((p = findroute(&aggregate, 0, NULL)) != NULL)
+#ifdef SOFT_RECONFIG
+			if (!p->disabled)
+#endif
+				return p;
+	}
+	return NULL;
+}
+#endif
 
 static void delroute(struct route_obj *route)
 {
@@ -599,6 +654,9 @@ static void delroute(struct route_obj *route)
 			}
 		}
 	}
+#ifdef SOFT_RECONFIG
+	if (route->disabled) passive_cnt--;
+#endif
 	free(route);
 	if (ballance_cnt && last_ballanced++ >= ballance_cnt)
 		ballance_tree();
@@ -691,23 +749,31 @@ static void mapsetclass(uint32_t from, uint32_t to, class_type class)
 
 static int chclass(struct route_obj *obj)
 {
-	struct route_obj route, *r;
-	uint32_t last_ip;
+	struct route_obj *r;
+	uint32_t first_ip, last_ip;
 
-	memcpy(&route, obj, sizeof(route));
-	last_ip = route.ip + (0xfffffffful >> (int)route.prefix_len);
-	r = obj;
+	r = obj;	/* for obj->class */
+	first_ip = r->ip;
+	last_ip = first_ip + (0xfffffffful >> (int)r->prefix_len);
 	for (;;)
-	{	r = nextroute(r);
+	{
+#ifdef SOFT_RECONFIG
+		do
+		{
+			r = nextroute(r);
+		} while (r && r->disabled);
+#else
+		r = nextroute(r);
+#endif
 		if (r == NULL || r->ip > last_ip)
-		{	mapsetclass(route.ip, last_ip, route.class);
+		{	mapsetclass(first_ip, last_ip, obj->class);
 			return 0;
 		}
-		if (r->ip < route.ip) continue;
-		if (route.ip != r->ip)
-			mapsetclass(route.ip, r->ip - 1, route.class);
-		route.ip = r->ip + (0xfffffffful >> (int)r->prefix_len) + 1;
-		if (route.ip == 0 || route.ip > last_ip) return 0;
+		if (r->ip < first_ip) continue;
+		if (first_ip != r->ip)
+			mapsetclass(first_ip, r->ip - 1, obj->class);
+		first_ip = r->ip + (0xfffffffful >> (int)r->prefix_len) + 1;
+		if (first_ip == 0 || first_ip > last_ip) return 0;
 	}
 }
 #endif
@@ -715,42 +781,45 @@ static int chclass(struct route_obj *obj)
 void withdraw(uint32_t prefix, int prefix_len)
 {
 	struct route_obj r, *p;
+	int enabled;
 #if NBITS > 0
-	struct route_obj parent, *pp;
+	struct route_obj *pp;
+	class_type cl;
 #endif
 
-	if (perlfilter(prefix, prefix_len, 0, NULL, 0, NULL, 0) == 0)
-	{
-		Log(2, "Filtered withdraw route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
-		return;
-	}
+#ifdef SOFT_RECONFIG
+	enabled = 1;
+#else
+	enabled = perlfilter(prefix, prefix_len, 0, NULL, 0, NULL, 0);
+#endif
 	r.ip = ntohl(prefix); r.prefix_len = (char)prefix_len;
 	p = findroute(&r, 0, NULL);
 	if (p == NULL)
-	{	Log(0, "Can't withdraw unexistant route %s/%u",
-		    inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+	{
+#ifndef SOFT_RECONFIG
+		if (enabled)
+#endif
+			Log(0, "Can't withdraw unexistant route %s/%u",
+			    inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
 		return;
 	}
-	perlwithdraw(prefix, prefix_len);
-#if NBITS > 0
-	/* find parent route */
-	parent.ip = ntohl(prefix); parent.prefix_len = (char)prefix_len;
-	parent.class = 0;
-	while (parent.prefix_len)
-	{	parent.prefix_len--;
-		parent.ip &= 0xfffffffful << (32 - (int)parent.prefix_len);
-		if ((pp = findroute(&parent, 0, NULL)) != NULL)
-		{	parent.class = pp->class;
-			break;
-		}
-	}
-	/* modify classes */
-	if (p->class != parent.class)
-	{	p->class = parent.class;
-		chclass(p);
-	}
+#ifdef SOFT_RECONFIG
+	if (!p->disabled)
 #endif
-	Log(2, "Withdraw route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+	{
+		perlwithdraw(prefix, prefix_len);
+#if NBITS > 0
+		/* find aggregate route */
+		pp = aggregate_route(p);
+		cl = (pp == NULL ? 0 : pp->class);
+		/* modify classes */
+		if (p->class != cl)
+		{	p->class = cl;
+			chclass(p);
+		}
+#endif
+		Log(2, "Withdraw route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+	}
 	/* remove route */
 	delroute(p);
 }
@@ -760,36 +829,119 @@ void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *commun
 {
 	struct route_obj r, *p;
 	int added;
+	int enabled;
 
-	if (perlfilter(prefix, prefix_len, community_len, community, aspath_len, aspath, nexthop) == 0)
+	enabled = perlfilter(prefix, prefix_len, community_len, community, aspath_len, aspath, nexthop);
+	memset(&r, 0, sizeof(r));
+	if (!enabled)
 	{
 		Log(2, "Filtered route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
-		return;
+#ifdef SOFT_RECONFIG
+		r.disabled = 1;
+#endif
 	}
 #if NBITS > 0
-	r.class = setclass(community, community_len, aspath, aspath_len, prefix, prefix_len);
+	if (enabled)
+		r.class = setclass(community, community_len, aspath, aspath_len, prefix, prefix_len);
 #endif
 	r.ip = ntohl(prefix);
 	r.prefix_len = (char)prefix_len;
-	r.left = r.right = r.parent = NULL;
+#ifdef SOFT_RECONFIG
+	r.nexthop = nexthop;
+	r.aspath_len = (unsigned char)aspath_len;
+	memcpy(r.aspath, aspath, sizeof(*r.aspath) * r.aspath_len);
+	r.community_len = (unsigned char)community_len;
+	memcpy(r.aspath + r.aspath_len, community, sizeof(*r.community) * r.community_len);
+
 	p = findroute(&r, 1, &added);
 	if (!p)
 	{	Log(0, "Internal error!");
 		exit(2);
 	}
-	perlupdate(prefix, prefix_len, community_len, community, aspath_len, aspath, nexthop, added);
-#if NBITS == 0
-	Log(2, "Updated %sroute %s/%u",
-	    (added ? "" : "existing "),
-	    inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
 #else
-	Log(2, "Updated %sroute %s/%u, class %u",
-	    (added ? "" : "existing "),
-	    inet_ntoa(*(struct in_addr *)&prefix), prefix_len, r.class);
-	if (!added && p->class == r.class)
-		return;
-	if (!added) p->class = r.class;
-	chclass(p);
+	p = findroute(&r, enabled ? 1 : 0, &added);
+	if (!p)
+	{
+		if (!enabled) return;
+		Log(0, "Internal error!");
+		exit(2);
+	}
+#endif
+	if (!enabled)
+	{
+		if (!added)
+		{
+#ifdef SOFT_RECONFIG
+			if (!p->disabled)
+#endif
+			{
+				/* filtered out existing route */
+				/* perform withdraw procedure */
+#if NBITS>0
+				struct route_obj *pp;
+				class_type cl;
+#endif
+
+				perlwithdraw(prefix, prefix_len);
+#if NBITS > 0
+				/* find aggregate route */
+				pp = aggregate_route(p);
+				cl = (pp == NULL ? 0 : pp->class);
+				/* modify classes */
+				if (p->class != cl)
+				{	p->class = cl;
+					chclass(p);
+				}
+#endif
+				Log(2, "Remove route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+#ifndef SOFT_RECONFIG
+				delroute(p);
+				return;
+#endif
+			}
+		}
+	}
+	else
+	{	/* enabled */
+		perlupdate(prefix, prefix_len, community_len, community, aspath_len, aspath, nexthop, added);
+#if NBITS == 0
+		Log(2, "Updated %sroute %s/%u",
+		    (added ? "" : "existing "),
+		    inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+#else
+		Log(2, "Updated %sroute %s/%u, class %u",
+		    (added ? "" : "existing "),
+		    inet_ntoa(*(struct in_addr *)&prefix), prefix_len, r.class);
+		if (added || p->class != r.class)
+		{
+			if (!added) p->class = r.class;
+			chclass(p);
+		}
+#endif
+	}
+#ifdef SOFT_RECONFIG
+	if (added) return;
+	r.parent = p->parent;
+	r.left = p->left;
+	r.right = p->right;
+	if (sizeofroute(*p) == sizeofroute(r))
+		memcpy(p, &r, sizeofroute(r));
+	else
+	{
+		struct route_obj *upd_route;
+
+		upd_route = malloc(sizeofroute(r));
+		memcpy(upd_route, &r, sizeofroute(r));
+		if (r.parent && r.parent->left == p)
+			r.parent->left = upd_route;
+		if (r.parent && r.parent->right == p)
+			r.parent->right = upd_route;
+		if (r.left)
+			r.left->parent = upd_route;
+		if (r.right)
+			r.right->parent = upd_route;
+		free(p);
+	}
 #endif
 }
 
@@ -820,6 +972,8 @@ void reset_table(void)
 		}
 	}
 	route_root = NULL;
+	last_ballanced = 0;
+	prefix_cnt = passive_cnt = 0;
 	perlbgpdown();
 	Log(2, "BGP table cleared");
 }
@@ -830,20 +984,21 @@ void do_initmap(void)
 #if NBITS > 0
 	mapsetclass(0, 0xfffffffful, 0);
 #endif
-	last_ballanced = 0;
-	prefix_cnt = 0;
 	exitperl();
 	PerlStart();
 	if (perl == NULL)
 		exit(4);
 	Log(2, "Perl loaded");
 	perlinitmap();
-	mapinited=1;
+	mapinited = 1;
 }
 
 void keepalive(int sent)
 {
 	Log(5, "KeepAlive %s, total %u prefixes", (sent ? "sent" : "received"), prefix_cnt);
+#ifdef SOFT_RECONFIG
+	Log(5, "%u passive prefixes", passive_cnt);
+#endif
 	perlkeepalive(sent);
 }
 
@@ -905,184 +1060,220 @@ shmagain:
 		do_initmap();
 }
 
+#ifdef SOFT_RECONFIG
+/* Clear map of classes, restart perl and reprocess all prefixes */
+void reconfig(void)
+{
+	struct route_obj *cur;
+	int enabled;
+
+	do_initmap();
+	prefix_cnt = passive_cnt = 0;
+	for (cur = firstroute(route_root); cur; cur = nextroute(cur))
+	{
+		uint32_t prefix = htonl(cur->ip);
+
+		prefix_cnt++;
+		enabled = perlfilter(prefix, cur->prefix_len, cur->community_len, cur->aspath + cur->aspath_len, cur->aspath_len, cur->aspath, cur->nexthop);
+		if (!enabled)
+		{
+			cur->disabled = 1;
+			cur->class = 0;
+			passive_cnt++;
+			continue;
+		} else
+		{
+			cur->disabled = 0;
+#if NBITS > 0
+			cur->class = setclass(cur->aspath + cur->aspath_len, cur->community_len, cur->aspath, cur->aspath_len, prefix, cur->prefix_len);
+			chclass(cur);
+#endif
+		}
+	}
+	perlupdate_done();
+	mapinited = 0;
+	Log(1, "Reconfig done");
+}
+#endif
+
 static int perlfilter(uint32_t prefix, int prefix_len, int community_len, uint32_t *community,
                       int aspath_len, uint32_t *aspath, uint32_t nexthop)
 {
-   char *prc;
-   char sprefix[32], scommunity[256], saspath[256];
-   SV *svcommunity, *svaspath, *svprefix, *svnexthop, *svret;
-   STRLEN n_a;
-   int rc;
+	char *prc;
+	char sprefix[32], scommunity[256], saspath[256];
+	SV *svcommunity, *svaspath, *svprefix, *svnexthop, *svret;
+	STRLEN n_a;
+	int rc;
 
-   dSP;
-   if (plfilter[0] == '\0') return 1;
-   svcommunity = perl_get_sv("community", TRUE);
-   svaspath    = perl_get_sv("aspath", TRUE);
-   svprefix    = perl_get_sv("prefix", TRUE);
-   svnexthop   = perl_get_sv("next_hop", TRUE);
-   sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
-   aspathstr(aspath_len, aspath, saspath, sizeof(saspath));
-   communitystr(community_len, community, scommunity, sizeof(scommunity));
-   sv_setpv(svcommunity, scommunity);
-   sv_setpv(svaspath, saspath);
-   sv_setpv(svprefix, sprefix);
-   sv_setpv(svnexthop, inet_ntoa(*(struct in_addr *)&nexthop));
-   SvREADONLY_on(svcommunity);
-   SvREADONLY_on(svaspath);
-   SvREADONLY_on(svprefix);
-   SvREADONLY_on(svnexthop);
-   ENTER;
-   SAVETMPS;
-   PUSHMARK(SP);
-   PUTBACK;
-   perl_call_pv(plfilter, G_EVAL|G_SCALAR);
-   SPAGAIN;
-   svret = POPs;
-   if (SvTRUE(svret))
-     prc = strdup(SvPV(svret, n_a));
-   else
-     prc = NULL;
-   PUTBACK;
-   FREETMPS;
-   LEAVE;
-   if (SvTRUE(ERRSV))
-   {
-     Log(0, "Perl %s() eval error: %s", plfilter, SvPV(ERRSV, n_a));
-     plfilter[0] = '\0';
-     prc = NULL;
-   }
-   if (n_a == 0 && prc)
-   {
-     free(prc);
-     prc = NULL;
-   }
-   if (prc)
-   { 
-     rc = atoi(prc);
-     free(prc);
-   } else
-   {
-     rc = 1;
-   }
-   return rc;
+	dSP;
+	if (plfilter[0] == '\0') return 1;
+	svcommunity = perl_get_sv("community", TRUE);
+	svaspath    = perl_get_sv("aspath", TRUE);
+	svprefix    = perl_get_sv("prefix", TRUE);
+	svnexthop   = perl_get_sv("next_hop", TRUE);
+	sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+	aspathstr(aspath_len, aspath, saspath, sizeof(saspath));
+	communitystr(community_len, community, scommunity, sizeof(scommunity));
+	sv_setpv(svcommunity, scommunity);
+	sv_setpv(svaspath, saspath);
+	sv_setpv(svprefix, sprefix);
+	sv_setpv(svnexthop, inet_ntoa(*(struct in_addr *)&nexthop));
+	SvREADONLY_on(svcommunity);
+	SvREADONLY_on(svaspath);
+	SvREADONLY_on(svprefix);
+	SvREADONLY_on(svnexthop);
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	PUTBACK;
+	perl_call_pv(plfilter, G_EVAL|G_SCALAR);
+	SPAGAIN;
+	svret = POPs;
+	if (SvOK(svret))
+		prc = strdup(SvPV(svret, n_a));
+	else
+		prc = NULL;
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+	if (SvTRUE(ERRSV))
+	{
+		Log(0, "Perl %s() eval error: %s", plfilter, SvPV(ERRSV, n_a));
+		plfilter[0] = '\0';
+		prc = NULL;
+	}
+	if (n_a == 0 && prc)
+	{
+		free(prc);
+		prc = NULL;
+	}
+	if (prc)
+	{ 
+		rc = atoi(prc);
+		free(prc);
+	} else
+	{
+		rc = 1;
+	}
+	return rc;
 }
 
 static void perlupdate(uint32_t prefix, int prefix_len, int community_len, uint32_t *community,
-                      int aspath_len, uint32_t *aspath, uint32_t nexthop, int added)
+                       int aspath_len, uint32_t *aspath, uint32_t nexthop, int added)
 {
-   char sprefix[32], scommunity[256], saspath[256];
-   SV *svcommunity, *svaspath, *svprefix, *svnexthop, *svnew;
-   STRLEN n_a;
+	char sprefix[32], scommunity[256], saspath[256];
+	SV *svcommunity, *svaspath, *svprefix, *svnexthop, *svnew;
+	STRLEN n_a;
 
-   dSP;
-   if (plupdate[0] == '\0') return;
-   svcommunity = perl_get_sv("community", TRUE);
-   svaspath    = perl_get_sv("aspath", TRUE);
-   svprefix    = perl_get_sv("prefix", TRUE);
-   svnexthop   = perl_get_sv("next_hop", TRUE);
-   svnew       = perl_get_sv("new", TRUE);
-   sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
-   aspathstr(aspath_len, aspath, saspath, sizeof(saspath));
-   communitystr(community_len, community, scommunity, sizeof(scommunity));
-   sv_setpv(svcommunity, scommunity);
-   sv_setpv(svaspath, saspath);
-   sv_setpv(svprefix, sprefix);
-   sv_setpv(svnexthop, inet_ntoa(*(struct in_addr *)&nexthop));
-   sv_setpv(svnew, added ? "1" : "");
-   SvREADONLY_on(svcommunity);
-   SvREADONLY_on(svaspath);
-   SvREADONLY_on(svprefix);
-   SvREADONLY_on(svnexthop);
-   SvREADONLY_on(svnew);
-   ENTER;
-   SAVETMPS;
-   PUSHMARK(SP);
-   PUTBACK;
-   perl_call_pv(plupdate, G_EVAL|G_SCALAR);
-   SPAGAIN;
-   PUTBACK;
-   FREETMPS;
-   LEAVE;
-   if (SvTRUE(ERRSV))
-   {
-     Log(0, "Perl %s() eval error: %s", plupdate, SvPV(ERRSV, n_a));
-     plupdate[0] = '\0';
-   }
+	dSP;
+	if (plupdate[0] == '\0') return;
+	svcommunity = perl_get_sv("community", TRUE);
+	svaspath    = perl_get_sv("aspath", TRUE);
+	svprefix    = perl_get_sv("prefix", TRUE);
+	svnexthop   = perl_get_sv("next_hop", TRUE);
+	svnew       = perl_get_sv("new", TRUE);
+	sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+	aspathstr(aspath_len, aspath, saspath, sizeof(saspath));
+	communitystr(community_len, community, scommunity, sizeof(scommunity));
+	sv_setpv(svcommunity, scommunity);
+	sv_setpv(svaspath, saspath);
+	sv_setpv(svprefix, sprefix);
+	sv_setpv(svnexthop, inet_ntoa(*(struct in_addr *)&nexthop));
+	sv_setpv(svnew, added ? "1" : "");
+	SvREADONLY_on(svcommunity);
+	SvREADONLY_on(svaspath);
+	SvREADONLY_on(svprefix);
+	SvREADONLY_on(svnexthop);
+	SvREADONLY_on(svnew);
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	PUTBACK;
+	perl_call_pv(plupdate, G_EVAL|G_SCALAR);
+	SPAGAIN;
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+	if (SvTRUE(ERRSV))
+	{
+		Log(0, "Perl %s() eval error: %s", plupdate, SvPV(ERRSV, n_a));
+		plupdate[0] = '\0';
+	}
 }
 
 static void perlwithdraw(uint32_t prefix, int prefix_len)
 {
-   char sprefix[32];
-   SV *svprefix;
-   STRLEN n_a;
+	char sprefix[32];
+	SV *svprefix;
+	STRLEN n_a;
 
-   dSP;
-   if (plwithdraw[0] == '\0') return;
-   svprefix    = perl_get_sv("prefix", TRUE);
-   sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
-   sv_setpv(svprefix, sprefix);
-   SvREADONLY_on(svprefix);
-   ENTER;
-   SAVETMPS;
-   PUSHMARK(SP);
-   PUTBACK;
-   perl_call_pv(plwithdraw, G_EVAL|G_SCALAR);
-   SPAGAIN;
-   PUTBACK;
-   FREETMPS;
-   LEAVE;
-   if (SvTRUE(ERRSV))
-   {
-     Log(0, "Perl %s() eval error: %s", plwithdraw, SvPV(ERRSV, n_a));
-     plwithdraw[0] = '\0';
-   }
+	dSP;
+	if (plwithdraw[0] == '\0') return;
+	svprefix    = perl_get_sv("prefix", TRUE);
+	sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+	sv_setpv(svprefix, sprefix);
+	SvREADONLY_on(svprefix);
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	PUTBACK;
+	perl_call_pv(plwithdraw, G_EVAL|G_SCALAR);
+	SPAGAIN;
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+	if (SvTRUE(ERRSV))
+	{
+		Log(0, "Perl %s() eval error: %s", plwithdraw, SvPV(ERRSV, n_a));
+		plwithdraw[0] = '\0';
+	}
 }
 
 static void perlupdate_done(void)
 {
-   STRLEN n_a;
+	STRLEN n_a;
 
-   dSP;
-   if (plupdatedone[0] == '\0') return;
-   ENTER;
-   SAVETMPS;
-   PUSHMARK(SP);
-   PUTBACK;
-   perl_call_pv(plupdatedone, G_EVAL|G_SCALAR);
-   SPAGAIN;
-   PUTBACK;
-   FREETMPS;
-   LEAVE;
-   if (SvTRUE(ERRSV))
-   {
-     Log(0, "Perl %s() eval error: %s", plupdatedone, SvPV(ERRSV, n_a));
-     plupdatedone[0] = '\0';
-   }
+	dSP;
+	if (plupdatedone[0] == '\0') return;
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	PUTBACK;
+	perl_call_pv(plupdatedone, G_EVAL|G_SCALAR);
+	SPAGAIN;
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+	if (SvTRUE(ERRSV))
+	{
+		Log(0, "Perl %s() eval error: %s", plupdatedone, SvPV(ERRSV, n_a));
+		plupdatedone[0] = '\0';
+	}
 }
 
 static void perlkeepalive(int sent)
 {
-   SV *svsent;
-   STRLEN n_a;
+	SV *svsent;
+	STRLEN n_a;
 
-   dSP;
-   if (plkeepalive[0] == '\0') return;
-   svsent = perl_get_sv("sent", TRUE);
-   sv_setpv(svsent, sent ? "1" : "");
-   SvREADONLY_on(svsent);
-   ENTER;
-   SAVETMPS;
-   PUSHMARK(SP);
-   PUTBACK;
-   perl_call_pv(plkeepalive, G_EVAL|G_SCALAR);
-   SPAGAIN;
-   PUTBACK;
-   FREETMPS;
-   LEAVE;
-   if (SvTRUE(ERRSV))
-   {
-     Log(0, "Perl %s() eval error: %s", plkeepalive, SvPV(ERRSV, n_a));
-     plkeepalive[0] = '\0';
-   }
+	dSP;
+	if (plkeepalive[0] == '\0') return;
+	svsent = perl_get_sv("sent", TRUE);
+	sv_setpv(svsent, sent ? "1" : "");
+	SvREADONLY_on(svsent);
+	ENTER;
+	SAVETMPS;
+	PUSHMARK(SP);
+	PUTBACK;
+	perl_call_pv(plkeepalive, G_EVAL|G_SCALAR);
+	SPAGAIN;
+	PUTBACK;
+	FREETMPS;
+	LEAVE;
+	if (SvTRUE(ERRSV))
+	{
+		Log(0, "Perl %s() eval error: %s", plkeepalive, SvPV(ERRSV, n_a));
+		plkeepalive[0] = '\0';
+	}
 }
 

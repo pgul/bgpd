@@ -49,6 +49,10 @@ sub filter
 # $community and $aspath undefined for withdrawed announces
 # Return 0 to deny update, 1 to accept
 
+# You cannot reject withdraw, it just inhibit warning "withdraw unexisting announce"
+# if original announce was rejected.
+# This function does not call on withdraw if soft-reconfiguration enabled.
+
 	return 0 if $prefix =~ /^(10|127)\./;
 	return 1;	# accept
 }

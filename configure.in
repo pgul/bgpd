@@ -36,6 +36,11 @@ AC_ARG_WITH(debug,
      [  --with-debug            generate debug info],
      [CFLAGS="$CFLAGS -g"], [CFLAGS="$CFLAGS -O3"])
 
+dnl Set dirs
+AC_ARG_WITH(soft_reconfig,
+     [  --with-soft-reconfig    allow bgp soft-reconfiguration],
+     AC_DEFINE(SOFT_RECONFIG))
+
 dnl Set shmem params
 nbits=2
 maxprefix=24

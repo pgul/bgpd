@@ -1,5 +1,5 @@
 
-- improve perl hooks
+- control interface (tcp or unix socket and replies by perl hooks)
 - syslog
 - loglevel commandline support (verbose)
 - documentation

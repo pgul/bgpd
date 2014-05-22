@@ -89,4 +89,6 @@ void do_initmap(void);
 void perlbgpup(void);
 void perlbgpdown(void);
 void keepalive(int sent);
+void reconfig(void);
 int config(char *confname);
+
