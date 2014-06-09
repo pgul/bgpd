@@ -18,7 +18,7 @@ in_addr_t remote;
 uint16_t bindport, port;
 time_t waittime, reconnect_time;
 uint16_t holdtime;
-int ballance_cnt, maxdepth;
+int balance_cnt, maxdepth;
 unsigned long int mapkey;
 char perlfile[256], plsetclass[256], plinitmap[256], plbgpup[256], plbgpdown[256];
 char plfilter[256], plupdate[256], plwithdraw[256], plupdatedone[256], plkeepalive[256];
@@ -34,7 +34,7 @@ int config(char *confname)
 	waittime = 60;
 	reconnect_time = 10;
 	holdtime = 180;
-	ballance_cnt = 1000;
+	balance_cnt = 1000;
 	maxdepth = 50;
 	mapkey = MAPKEY;
 	my_as = remote_as = 0;
@@ -156,10 +156,10 @@ int config(char *confname)
 			}
 			continue;
 		}
-		if (strcasecmp(str, "ballance-check") == 0)
-		{	ballance_cnt = atoi(p);
-			if (!isdigit(*p) || ballance_cnt <= 0)
-			{	Log(0, "Incorrect ballance-check=%s in config!", p);
+		if (strcasecmp(str, "balance-check") == 0)
+		{	balance_cnt = atoi(p);
+			if (!isdigit(*p) || balance_cnt <= 0)
+			{	Log(0, "Incorrect balance-check=%s in config!", p);
 				return 1;
 			}
 			continue;

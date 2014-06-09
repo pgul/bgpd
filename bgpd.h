@@ -72,7 +72,7 @@ extern in_addr_t remote;
 extern uint16_t bindport, port;
 extern time_t waittime, reconnect_time;
 extern uint16_t holdtime;
-extern int ballance_cnt, maxdepth;
+extern int balance_cnt, maxdepth;
 extern char perlfile[], plsetclass[], plinitmap[], plbgpup[], plbgpdown[];
 extern char plfilter[], plupdate[], plwithdraw[], plupdatedone[], plkeepalive[];
 extern char pidfile[];

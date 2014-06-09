@@ -55,7 +55,7 @@ struct route_obj
 
 static struct route_obj *route_root = NULL;
 class_type *map;
-static int last_ballanced = 0;
+static int last_balanced = 0;
 static int prefix_cnt, passive_cnt;
 int mapinited;
 
@@ -311,7 +311,7 @@ static void communitystr(int comm_len, uint32_t *community, char *scomm, int len
 		else
 			sprintf(p, "%u:%u", firstas, secondas);
 		p += strlen(p);
-		if (p - scomm + 20 > len)
+		if (p - scomm + 22 > len)
 			break;
 	}
 }
@@ -468,7 +468,7 @@ static int routedepth(struct route_obj *root)
 }
 
 
-static struct route_obj *ballance(struct route_obj *r)
+static struct route_obj *balance(struct route_obj *r)
 {
 	int cnt_left, cnt_right, i;
 	struct route_obj *p, *pp;
@@ -503,26 +503,26 @@ static struct route_obj *ballance(struct route_obj *r)
 			exit(2);
 		}
 		r = p;
-		last_ballanced = 0;
+		last_balanced = 0;
 	}
 }
 
-static void ballance_tree(void)
+static void balance_tree(void)
 {
 	struct route_obj *r, *p;
 	int depth;
 
-	last_ballanced = 0;
+	last_balanced = 0;
 	r = route_root;
 	if (r == NULL) return;
 	depth = routedepth(route_root);
 	if (depth < maxdepth)
-	{	Log(6, "Binary tree ballancing not needed (depth %u)", depth);
+	{	Log(6, "Binary tree balancing not needed (depth %u)", depth);
 		return;
 	}
-	Log(5, "Binary tree ballancing (depth %u)...", depth);
+	Log(5, "Binary tree balancing (depth %u)...", depth);
 	while (1)
-	{	r = ballance(r);
+	{	r = balance(r);
 		if (r->left)
 		{	r = r->left;
 			continue;
@@ -597,8 +597,8 @@ static struct route_obj *findroute(struct route_obj *new, int addnew, int *added
 			p->parent = cur;
 			*newcur = p;
 			if (added) *added=1;
-			if (ballance_cnt && last_ballanced++ >= ballance_cnt)
-				ballance_tree();
+			if (balance_cnt && last_balanced++ >= balance_cnt)
+				balance_tree();
 			return p;
 		}
 	}
@@ -658,8 +658,8 @@ static void delroute(struct route_obj *route)
 	if (route->disabled) passive_cnt--;
 #endif
 	free(route);
-	if (ballance_cnt && last_ballanced++ >= ballance_cnt)
-		ballance_tree();
+	if (balance_cnt && last_balanced++ >= balance_cnt)
+		balance_tree();
 	prefix_cnt--;
 }
 
@@ -972,7 +972,7 @@ void reset_table(void)
 		}
 	}
 	route_root = NULL;
-	last_ballanced = 0;
+	last_balanced = 0;
 	prefix_cnt = passive_cnt = 0;
 	perlbgpdown();
 	Log(2, "BGP table cleared");
