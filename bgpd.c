@@ -5,7 +5,6 @@
 #include <sys/types.h>
 #include <sys/time.h>
 #include <time.h>
-#include <stdarg.h>
 #include <signal.h>
 #include <errno.h>
 #include <string.h>
@@ -58,23 +57,6 @@ static int blockread(int h, void *vbuf, int size)
 		if (terminated) return len;
 	}
 	return len;
-}
-
-void Log(int level, char *format, ...)
-{
-	time_t t;
-	struct tm *tm;
-	char str[64];
-	va_list ap;
-	va_start(ap, format);
-	t = time(NULL);
-	tm = localtime(&t);
-	strftime(str, sizeof(str), "%d/%m/%Y %T", tm);
-	fprintf(stdout, "%u %s ", level, str);
-	vfprintf(stdout, format, ap);
-	fprintf(stdout, "\n");
-	va_end(ap);
-	fflush(stdout);
 }
 
 static void setstatus(enum statustype newstatus)
@@ -678,7 +660,7 @@ int main(int argc, char *argv[])
 		}
 	}
 	if (argc > optind)
-	confname = argv[optind];
+		confname = argv[optind];
 	if (config(confname))
 		exit(3);
 	if (daemonize) daemon(0, 0);

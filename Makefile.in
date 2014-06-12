@@ -20,12 +20,21 @@ bgpd:	${OBJS}
 bgpd.o:		bgpd.c bgpd.h Makefile
 bgptable.o:	bgptable.c bgpd.h ipmap.h Makefile
 config.o:	config.c bgpd.h Makefile
+tree-test.o:	tree-test.c bgpd.h Makefile
 
 addrq.o:	addrq.c bgpd.h ipmap.h Makefile
 
 addrq:		addrq.o
 	@echo Linking $@...
 	@gcc ${COPT} @LDFLAGS@ -o $@ addrq.o @LIBS@
+
+test:	tree-test
+	@echo Testing...
+	@./tree-test tree-test.conf < tree-test.data
+
+tree-test:	tree-test.o bgptable.o config.o
+	@echo Linking $@...
+	@gcc ${COPT} @LDFLAGS@ -o $@ $* @LIBS@
 
 install:	all
 	install bgpd addrq $(prefix)/bin

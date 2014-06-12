@@ -13,7 +13,6 @@
 
 #include <EXTERN.h>
 #include <perl.h>
-#include <unistd.h>
 #include <XSUB.h>
 
 #ifndef sv_undef
@@ -435,7 +434,7 @@ static int routedepth(struct route_obj *root)
 	while (1)
 	{	if (r->left)
 		{	r = r->left;
-			if (++curdepth>maxdepth) maxdepth=curdepth;
+			if (++curdepth > maxdepth) maxdepth = curdepth;
 			continue;
 		}
 		if (r->right)
@@ -597,7 +596,7 @@ static struct route_obj *findroute(struct route_obj *new, int addnew, int *added
 			p->parent = cur;
 			*newcur = p;
 			if (added) *added=1;
-			if (balance_cnt && last_balanced++ >= balance_cnt)
+			if (addnew == 1 && balance_cnt && last_balanced++ >= balance_cnt)
 				balance_tree();
 			return p;
 		}
@@ -657,10 +656,10 @@ static void delroute(struct route_obj *route)
 #ifdef SOFT_RECONFIG
 	if (route->disabled) passive_cnt--;
 #endif
+	prefix_cnt--;
 	free(route);
 	if (balance_cnt && last_balanced++ >= balance_cnt)
 		balance_tree();
-	prefix_cnt--;
 }
 
 #if NBITS > 0
@@ -894,7 +893,9 @@ void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *commun
 				}
 #endif
 				Log(2, "Remove route %s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
-#ifndef SOFT_RECONFIG
+#ifdef SOFT_RECONFIG
+				passive_cnt++;
+#else
 				delroute(p);
 				return;
 #endif
@@ -918,6 +919,10 @@ void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *commun
 			chclass(p);
 		}
 #endif
+#ifdef SOFT_RECONFIG
+		if (!added && p->disabled)
+			passive_cnt--;
+#endif
 	}
 #ifdef SOFT_RECONFIG
 	if (added) return;
@@ -940,6 +945,8 @@ void update(uint32_t prefix, int prefix_len, int community_len, uint32_t *commun
 			r.left->parent = upd_route;
 		if (r.right)
 			r.right->parent = upd_route;
+		if (route_root == p)
+			route_root = upd_route;
 		free(p);
 	}
 #endif

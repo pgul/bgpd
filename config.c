@@ -3,6 +3,7 @@
 #include <string.h>
 #include <errno.h>
 #include <ctype.h>
+#include <stdarg.h>
 #include <sys/types.h>
 #include <time.h>
 #include <sys/socket.h>
@@ -224,3 +225,21 @@ int config(char *confname)
 	}
 	return 0;
 }
+
+void Log(int level, char *format, ...)
+{
+	time_t t;
+	struct tm *tm;
+	char str[64];
+	va_list ap;
+	va_start(ap, format);
+	t = time(NULL);
+	tm = localtime(&t);
+	strftime(str, sizeof(str), "%d/%m/%Y %T", tm);
+	fprintf(stdout, "%u %s ", level, str);
+	vfprintf(stdout, format, ap);
+	fprintf(stdout, "\n");
+	va_end(ap);
+	fflush(stdout);
+}
+
