@@ -160,8 +160,10 @@ static int PerlStart(void)
 		return 1;
 	}
 	atexit(exitperl);
-	svremote    = perl_get_sv("remote", TRUE);
-	svremoteas  = perl_get_sv("remote_as", TRUE);
+	svremote   = perl_get_sv("remote", TRUE);
+	svremoteas = perl_get_sv("remote_as", TRUE);
+	SvREADONLY_off(svremote);
+	SvREADONLY_off(svremoteas);
 	sv_setpv(svremote, inet_ntoa(*(struct in_addr *)&remote));
 	sv_setiv(svremoteas, remote_as);
 	SvREADONLY_on(svremote);
@@ -247,6 +249,9 @@ static class_type perlsetclass(char *community, char *aspath, char *prefix)
 	svcommunity = perl_get_sv("community", TRUE);
 	svaspath    = perl_get_sv("aspath", TRUE);
 	svprefix    = perl_get_sv("prefix", TRUE);
+	SvREADONLY_off(svcommunity);
+	SvREADONLY_off(svaspath);
+	SvREADONLY_off(svprefix);
 	sv_setpv(svcommunity, community);
 	sv_setpv(svaspath, aspath);
 	sv_setpv(svprefix, prefix);
@@ -1122,6 +1127,10 @@ static int perlfilter(uint32_t prefix, int prefix_len, int community_len, uint32
 	sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
 	aspathstr(aspath_len, aspath, saspath, sizeof(saspath));
 	communitystr(community_len, community, scommunity, sizeof(scommunity));
+	SvREADONLY_off(svcommunity);
+	SvREADONLY_off(svaspath);
+	SvREADONLY_off(svprefix);
+	SvREADONLY_off(svnexthop);
 	sv_setpv(svcommunity, scommunity);
 	sv_setpv(svaspath, saspath);
 	sv_setpv(svprefix, sprefix);
@@ -1183,6 +1192,11 @@ static void perlupdate(uint32_t prefix, int prefix_len, int community_len, uint3
 	sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
 	aspathstr(aspath_len, aspath, saspath, sizeof(saspath));
 	communitystr(community_len, community, scommunity, sizeof(scommunity));
+	SvREADONLY_off(svcommunity);
+	SvREADONLY_off(svaspath);
+	SvREADONLY_off(svprefix);
+	SvREADONLY_off(svnexthop);
+	SvREADONLY_off(svnew);
 	sv_setpv(svcommunity, scommunity);
 	sv_setpv(svaspath, saspath);
 	sv_setpv(svprefix, sprefix);
@@ -1217,8 +1231,9 @@ static void perlwithdraw(uint32_t prefix, int prefix_len)
 
 	dSP;
 	if (plwithdraw[0] == '\0') return;
-	svprefix    = perl_get_sv("prefix", TRUE);
+	svprefix = perl_get_sv("prefix", TRUE);
 	sprintf(sprefix, "%s/%u", inet_ntoa(*(struct in_addr *)&prefix), prefix_len);
+	SvREADONLY_off(svprefix);
 	sv_setpv(svprefix, sprefix);
 	SvREADONLY_on(svprefix);
 	ENTER;
@@ -1267,6 +1282,7 @@ static void perlkeepalive(int sent)
 	dSP;
 	if (plkeepalive[0] == '\0') return;
 	svsent = perl_get_sv("sent", TRUE);
+	SvREADONLY_off(svsent);
 	sv_setpv(svsent, sent ? "1" : "");
 	SvREADONLY_on(svsent);
 	ENTER;
