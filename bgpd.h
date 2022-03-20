@@ -3,10 +3,6 @@
 
 #define SLEEPTIME	10
 
-#ifndef HAVE_ULONG
-typedef unsigned long int ulong;
-#endif
-
 #ifndef HAVE_SOCKLEN_T
 typedef int socklen_t;
 #endif

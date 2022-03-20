@@ -714,7 +714,7 @@ static void mapsetclass(uint32_t from, uint32_t to, class_type class)
 #endif // MAXPREFIX == 32
 	shmemset(map, from, class, to-from);
 #else // NBITS < 8
-	{	ulong firstbyte, lastbyte;
+	{	uint32_t firstbyte, lastbyte;
 		char mask1, mask2;
 		firstbyte = from / (8 / NBITS);
 		lastbyte = (to - 1) / (8 / NBITS);
