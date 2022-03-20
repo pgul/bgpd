@@ -78,7 +78,7 @@ int config(char *confname)
 			Log(1, "Unknown line in config: '%s'", str);
 			continue;
 		}
-		for (pp = str + strlen(str) - 1; isspace(*p); *p-- = '\0');
+		for (pp = str + strlen(str) - 1; isspace(*pp); *pp-- = '\0');
 		if (strcasecmp(str, "my-as") == 0)
 		{	my_as = atoi(p);
 			if (!isdigit(*p) || my_as <= 0)
@@ -188,19 +188,19 @@ int config(char *confname)
 			if (p)
 			{	
 				*p = 0;
-				strncpy(perlfile, str, sizeof(perlfile));
+				strcpy(perlfile, str);
 				p += 2;
 			}
-			strncpy(plsetclass, p, sizeof(plsetclass));
+			strncpy(plsetclass, p, sizeof(plsetclass)-1);
 			continue;
 		}
 #endif
 		if (strcasecmp(str, "perlfile") == 0)
-		{	strncpy(perlfile, p, sizeof(perlfile));
+		{	strncpy(perlfile, p, sizeof(perlfile)-1);
 			continue;
 		}
 		if (strcasecmp(str, "pidfile") == 0)
-		{	strncpy(pidfile, p, sizeof(pidfile));
+		{	strncpy(pidfile, p, sizeof(pidfile)-1);
 			continue;
 		}
 

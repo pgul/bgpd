@@ -98,8 +98,9 @@ static int bgpsession(int sock)
 	uint32_t *aspath;
 	int aspath_len, community_len, prefix_len;
 	uint32_t prefix, nexthop;
-	uint32_t localpref, metric;
-	char atomic_aggregate, origin, aspath_type;
+	// uint32_t localpref, metric;
+	// char atomic_aggregate, aspath_type;
+	signed char origin;
 	int attr_length, withdraw_length, pathattr_length, nlri_length;
 	char *withdraw_routes, *pathattr, *nlri;
 	char attr_flags, attr_code;
@@ -426,7 +427,7 @@ send_keepalive:
 		community = NULL;
 		aspath_len = community_len = 0;
 		nexthop = 0;
-		metric = localpref = atomic_aggregate = 0;
+		// metric = localpref = atomic_aggregate = 0;
 		p = NULL;
 		while (pathattr_length > 0)
 		{
@@ -448,7 +449,7 @@ send_keepalive:
 				continue;
 			}
 			if (attr_code == 2)
-			{	aspath_type = *pathattr++;
+			{	// aspath_type = *pathattr++;
 				aspath_len = *pathattr++;
 				if (attr_length != aspath_len * (as32_support ? 4 : 2) + 2)
 				{
@@ -485,15 +486,15 @@ send_keepalive:
 				continue;
 			}
 			if (attr_code == 4)
-			{	metric = ntohl(*(uint32_t *)pathattr);
+			{	// metric = ntohl(*(uint32_t *)pathattr);
 				continue;
 			}
 			if (attr_code == 5)
-			{	localpref = ntohl(*(uint32_t *)pathattr);
+			{	// localpref = ntohl(*(uint32_t *)pathattr);
 				continue;
 			}
 			if (attr_code == 6)
-			{	atomic_aggregate = 1;
+			{	// atomic_aggregate = 1;
 				continue;
 			}
 			if (attr_code == 7)
@@ -516,7 +517,7 @@ send_keepalive:
 					Log(1, "AS4_PATH optional attribute ignored from AS4-supported speaker");
 				else
 				{
-					aspath_type = *pathattr++;
+					// aspath_type = *pathattr++;
 					i = *pathattr++;
 					if (i <= aspath_len)
 						memcpy(aspath + aspath_len - i, pathattr, i * 4);

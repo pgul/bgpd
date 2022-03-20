@@ -785,15 +785,15 @@ static int chclass(struct route_obj *obj)
 void withdraw(uint32_t prefix, int prefix_len)
 {
 	struct route_obj r, *p;
+#ifndef SOFT_RECONFIG
 	int enabled;
+#endif
 #if NBITS > 0
 	struct route_obj *pp;
 	class_type cl;
 #endif
 
-#ifdef SOFT_RECONFIG
-	enabled = 1;
-#else
+#ifndef SOFT_RECONFIG
 	enabled = perlfilter(prefix, prefix_len, 0, NULL, 0, NULL, 0);
 #endif
 	r.ip = ntohl(prefix); r.prefix_len = (char)prefix_len;
