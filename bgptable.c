@@ -134,6 +134,9 @@ static void exitperl(void)
 	{
 		perl_destruct(perl);
 		perl_free(perl);
+#ifdef PERL_SYS_TERM
+		PERL_SYS_TERM();
+#endif
 		perl = NULL;
 	}
 }
@@ -142,6 +145,7 @@ static int PerlStart(void)
 {
 	int rc;
 	char *perlargs[] = {"", "", NULL};
+	int perlargc = 2;
 	SV *svremote, *svremoteas;
 
 	perlargs[1] = perlfile;
@@ -149,9 +153,12 @@ static int PerlStart(void)
 	{	Log(0, "Can't read %s: %s", perlfile, strerror(errno));
 		return 1;
 	}
+#ifdef PERL_SYS_INIT3
+	PERL_SYS_INIT3(&perlargc, &perlargs, NULL);
+#endif
 	perl = perl_alloc();
 	perl_construct(perl);
-	rc = perl_parse(perl, xs_init, 2, perlargs, NULL);
+	rc = perl_parse(perl, xs_init, perlargc, perlargs, NULL);
 	if (rc)
 	{	Log(0, "Can't parse %s", perlfile);
 		perl_destruct(perl);

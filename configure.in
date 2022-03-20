@@ -104,9 +104,10 @@ CFLAGS="$CFLAGS $PERLCOPT"
 AC_TRY_RUN([
      #include <EXTERN.h>
      #include <perl.h>
+     #include <XSUB.h>
      PerlInterpreter *my_perl;
-     void boot_DynaLoader(CV *cv);
-     void xs_init(void)
+     void boot_DynaLoader(pTHX_ CV *cv);
+     void xs_init(pTHX)
      { dXSUB_SYS;
        newXS("DynaLoader::boot_DynaLoader", boot_DynaLoader, "callperl");
      }
@@ -116,9 +117,13 @@ AC_TRY_RUN([
      SV *var;
      char *retval;
      STRLEN n_a;
+     int perlargc = 3;
+     #ifdef PERL_SYS_INIT3
+     PERL_SYS_INIT3(&perlargc, &embedding, NULL);
+     #endif
      my_perl = perl_alloc();
      perl_construct(my_perl);
-     if (perl_parse(my_perl, xs_init, 3, embedding, NULL))
+     if (perl_parse(my_perl, xs_init, perlargc, embedding, NULL))
        return 1;
      perl_run(my_perl);
      var=perl_get_sv("var", TRUE);
@@ -140,6 +145,9 @@ AC_TRY_RUN([
        return 2;
      perl_destruct(my_perl);
      perl_free(my_perl);
+     #ifdef PERL_SYS_TERM
+     PERL_SYS_TERM();
+     #endif
      return 0;
      }
 ],
