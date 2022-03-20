@@ -20,7 +20,7 @@ uint16_t bindport, port;
 time_t waittime, reconnect_time;
 uint16_t holdtime;
 int balance_cnt, maxdepth;
-unsigned long int mapkey;
+uint32_t mapkey;
 char perlfile[256], plsetclass[256], plinitmap[256], plbgpup[256], plbgpdown[256];
 char plfilter[256], plupdate[256], plwithdraw[256], plupdatedone[256], plkeepalive[256];
 char pidfile[256] = PIDFILE;

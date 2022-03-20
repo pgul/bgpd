@@ -1,4 +1,4 @@
-#define MAPKEY		*(unsigned long *)"gul@"
+#define MAPKEY		*(uint32_t *)"gul@"
 #ifndef NBITS
 #define NBITS		2	// 1..16, power of 2
 #endif
@@ -21,4 +21,4 @@ typedef unsigned short int class_type;
 typedef char class_type;
 #endif
 
-extern unsigned long int mapkey;
+extern uint32_t mapkey;

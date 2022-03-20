@@ -664,7 +664,11 @@ int main(int argc, char *argv[])
 		confname = argv[optind];
 	if (config(confname))
 		exit(3);
-	if (daemonize) daemon(0, 0);
+	if (daemonize)
+		if (daemon(0, 0) != 0)
+		{	fprintf(stderr, "Can't daemonize: %s\n", strerror(errno));
+			exit(1);
+		}
 	if (pidfile[0])
 	{
 		FILE *f = fopen(pidfile, "w");

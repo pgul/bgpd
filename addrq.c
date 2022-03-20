@@ -17,7 +17,7 @@
 #if NBITS > 0
 static class_type *map;
 static int shmid;
-unsigned long int mapkey;
+uint32_t mapkey;
 #endif
 
 void Log(int level, char *format, ...)
