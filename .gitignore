@@ -1,0 +1,7 @@
+*.o
+Makefile
+addrq
+bgpd
+config.cache
+config.log
+config.status
