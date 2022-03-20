@@ -145,6 +145,7 @@ static int PerlStart(void)
 {
 	int rc;
 	char *perlargs[] = {"", "", NULL};
+	char **perlargv = perlargs;
 	int perlargc = 2;
 	SV *svremote, *svremoteas;
 
@@ -154,11 +155,11 @@ static int PerlStart(void)
 		return 1;
 	}
 #ifdef PERL_SYS_INIT3
-	PERL_SYS_INIT3(&perlargc, &perlargs, NULL);
+	PERL_SYS_INIT3(&perlargc, &perlargv, NULL);
 #endif
 	perl = perl_alloc();
 	perl_construct(perl);
-	rc = perl_parse(perl, xs_init, perlargc, perlargs, NULL);
+	rc = perl_parse(perl, xs_init, perlargc, perlargv, NULL);
 	if (rc)
 	{	Log(0, "Can't parse %s", perlfile);
 		perl_destruct(perl);

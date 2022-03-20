@@ -1152,17 +1152,18 @@ else
      }
      int main(int argc, char **argv, char **env)
      {
-     char *embedding[] = { "", "-e", "sub test { \$var='a' if \$var eq 'v'; return \$_[0]; }", NULL };
+     char *perlargs[] = { "", "-e", "sub test { \$var='a' if \$var eq 'v'; return \$_[0]; }", NULL };
+     char **perlargv = perlargs;
+     int perlargc = 3;
      SV *var;
      char *retval;
      STRLEN n_a;
-     int perlargc = 3;
      #ifdef PERL_SYS_INIT3
-     PERL_SYS_INIT3(&perlargc, &embedding, NULL);
+     PERL_SYS_INIT3(&perlargc, &perlargv, NULL);
      #endif
      my_perl = perl_alloc();
      perl_construct(my_perl);
-     if (perl_parse(my_perl, xs_init, perlargc, embedding, NULL))
+     if (perl_parse(my_perl, xs_init, perlargc, perlargv, NULL))
        return 1;
      perl_run(my_perl);
      var=perl_get_sv("var", TRUE);
@@ -1191,7 +1192,7 @@ else
      }
 
 EOF
-if { (eval echo configure:1195: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext} && (./conftest; exit) 2>/dev/null
+if { (eval echo configure:1196: \"$ac_link\") 1>&5; (eval $ac_link) 2>&5; } && test -s conftest${ac_exeext} && (./conftest; exit) 2>/dev/null
 then
   cat >> confdefs.h <<\EOF
 #define DO_PERL 1
