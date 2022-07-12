@@ -532,6 +532,11 @@ send_keepalive:
 				Log(1, "AS4_AGGREGATOR optional attribute ignored");
 				continue;
 			}
+			if (attr_code == 32)
+			{   /* LARGE_COMMUNITY */
+				Log(1, "LARGE_COMMUNITY optional attribute ignored");
+				continue;
+			}
 			if ((attr_flags & 0x80) == 0)
 			{	send_notify(sock, 4, 2); /* Unrecognized well-known attribute */
 				Log(0, "Unrecognized well-known attribute type %u length %u", attr_code, attr_length);
