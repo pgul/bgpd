@@ -449,7 +449,8 @@ send_keepalive:
 				continue;
 			}
 			if (attr_code == 2)
-			{	// aspath_type = *pathattr++;
+			{	// aspath_type = *pathattr;
+				pathattr++;
 				aspath_len = *pathattr++;
 				if (attr_length != aspath_len * (as32_support ? 4 : 2) + 2)
 				{
@@ -517,7 +518,8 @@ send_keepalive:
 					Log(1, "AS4_PATH optional attribute ignored from AS4-supported speaker");
 				else
 				{
-					// aspath_type = *pathattr++;
+					// aspath_type = *pathattr;
+					pathattr++;
 					i = *pathattr++;
 					if (i <= aspath_len)
 						memcpy(aspath + aspath_len - i, pathattr, i * 4);
