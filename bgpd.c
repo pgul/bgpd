@@ -838,6 +838,7 @@ errconnect:
 				setstatus(CONNECT);
 				if (sockout != -1) close(sockout);
 				sockout = -1;
+				client_addr_len = sizeof(client_addr);
 				newsock = accept(sockin, (struct sockaddr *)&client_addr, &client_addr_len);
 				if (newsock == -1)
 				{	Log(0, "Accept: %s", strerror(errno));
